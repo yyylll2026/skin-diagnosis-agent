@@ -1,0 +1,26 @@
+# 让构建上下文尽量小。注意：这里**不要**排除 *.md 或 docs/，
+# 因为 pyproject 的 readme 字段指向 backend/README.md，误排除会直接导致构建失败。
+.git
+.gitignore
+.dockerignore
+
+# 后端本地虚拟环境与运行期数据（模型与向量库绝不能进镜像）
+backend/.venv
+backend/data/chroma
+backend/data/uploads
+backend/data/app.db
+backend/data/*.log
+backend/skin_diagnosis_agent.egg-info
+backend/.pytest_cache
+backend/.ruff_cache
+backend/__pycache__
+
+# 前端依赖与产物（前端在构建阶段 1 里重新生成）
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# 编辑器与本地杂物
+.idea
+.vscode
+*.log

@@ -1,0 +1,21 @@
+# 强制文本文件用 LF。
+# 原因：本项目在 Windows 上开发、部署到 Linux 容器，如果 shell 脚本被检出成
+# CRLF，容器里会报 "bad interpreter: /usr/bin/env bash\r"，属于典型的难排查问题。
+* text=auto eol=lf
+
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+
+# 二进制文件不做转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.docx binary

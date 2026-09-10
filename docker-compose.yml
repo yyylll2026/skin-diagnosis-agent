@@ -1,0 +1,96 @@
+# =============================================================
+# 皮肤诊断智能体 · 容器编排
+#
+# 默认假设：Ollama 跑在宿主机（Windows / macOS 上体验最好，可直接用 GPU）。
+# 若要让 Ollama 也进容器，启用文件末尾注释掉的 ollama 服务，
+# 并把 backend 的 SKIN_OLLAMA_BASE_URL 改为 http://ollama:11434。
+#
+# 启动：
+#   docker compose up -d --build
+#   前端 http://localhost:5173 ｜ 后端 http://localhost:8000/docs
+# =============================================================
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: skin-diagnosis-backend:0.1.0
+    container_name: skin-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # 指向宿主机上的 Ollama
+      SKIN_OLLAMA_BASE_URL: http://host.docker.internal:11434
+      SKIN_VISION_MODEL: ${SKIN_VISION_MODEL:-qwen2.5vl:7b}
+      SKIN_TEXT_MODEL: ${SKIN_TEXT_MODEL:-qwen2.5vl:7b}
+      SKIN_FAST_MODEL: ${SKIN_FAST_MODEL:-qwen2.5vl:3b}
+      SKIN_EMBEDDING_BACKEND: ${SKIN_EMBEDDING_BACKEND:-ollama}
+      SKIN_EMBEDDING_MODEL: ${SKIN_EMBEDDING_MODEL:-bge-m3}
+      SKIN_CHROMA_DIR: /app/data/chroma
+      SKIN_SQLITE_PATH: /app/data/app.db
+      # 前端通过 Nginx 同源代理访问，此处放开本地调试来源
+      SKIN_CORS_ORIGINS: http://localhost:5173,http://localhost:8080
+    volumes:
+      # 语料目录挂出来，方便往里面丢文档后执行 reindex
+      - ./backend/data/docs:/app/data/docs
+      - chroma_data:/app/data/chroma
+      - app_db:/app/data
+    extra_hosts:
+      # Linux 下让容器能解析到宿主机；Windows/macOS 的 Docker Desktop 自带
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/v1/system/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    networks:
+      - skin-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: skin-diagnosis-frontend:0.1.0
+    container_name: skin-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - skin-net
+
+  # ---------------------------------------------------------------
+  # 可选：把 Ollama 也放进容器（Linux + NVIDIA GPU 场景）
+  # 启用前记得把 backend 的 SKIN_OLLAMA_BASE_URL 改成 http://ollama:11434
+  # ---------------------------------------------------------------
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: skin-ollama
+  #   restart: unless-stopped
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_models:/root/.ollama
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #   networks:
+  #     - skin-net
+
+volumes:
+  chroma_data:
+  app_db:
+  # ollama_models:
+
+networks:
+  skin-net:
+    driver: bridge

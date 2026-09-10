@@ -1,0 +1,22 @@
+{
+  "name": "skin-diagnosis-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "皮肤诊断智能体前端界面",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "element-plus": "^2.9.1",
+    "markdown-it": "^14.1.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^6.0.7"
+  }
+}

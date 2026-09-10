@@ -1,0 +1,344 @@
+/* ===================================================================
+   皮肤诊断智能体 · 全局主题（浅色）
+   =================================================================== */
+
+:root {
+  /* 品牌 / 主色 */
+  --brand: #0e7490;
+  --brand-aux: #0891b2;
+  --brand-weak: #ecfeff;
+  --brand-border: #a5e8f2;
+  --brand-hover: #0c6379;
+
+  /* 背景与容器 */
+  --bg: #f5f8fa;
+  --bg-sidebar: #ffffff;
+  --card-bg: #ffffff;
+  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.05);
+  --card-shadow-hover: 0 2px 6px rgba(15, 23, 42, 0.06), 0 10px 26px rgba(15, 23, 42, 0.08);
+
+  /* 文本 */
+  --text: #0f172a;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --text-inverse: #ffffff;
+
+  /* 边框 / 分割线 */
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --divider: #eef2f6;
+
+  /* 风险等级 */
+  --risk-low: #16a34a;
+  --risk-low-bg: #f0fdf4;
+  --risk-medium: #d97706;
+  --risk-medium-bg: #fffbeb;
+  --risk-high: #ea580c;
+  --risk-high-bg: #fff7ed;
+  --risk-urgent: #dc2626;
+  --risk-urgent-bg: #fef2f2;
+
+  /* 状态 / 语义色 */
+  --danger: #dc2626;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+  --success: #16a34a;
+  --warning: #d97706;
+
+  /* 尺寸 */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --sidebar-width: 300px;
+  --sidebar-width-collapsed: 64px;
+
+  /* 字体 */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC",
+    "Hiragino Sans GB", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+
+  /* 覆盖 Element Plus 主色，保证组件与主题一致 */
+  --el-color-primary: #0e7490;
+  --el-color-primary-light-3: #3d9caf;
+  --el-color-primary-light-5: #6bb5c4;
+  --el-color-primary-light-7: #99cdd8;
+  --el-color-primary-light-8: #b8dde4;
+  --el-color-primary-light-9: #e3f3f6;
+  --el-color-primary-dark-2: #0c6379;
+  --el-font-family: var(--font-sans);
+  --el-text-color-primary: var(--text);
+  --el-text-color-regular: #334155;
+  --el-border-color: var(--border);
+  --el-border-color-light: var(--divider);
+  --el-fill-color-light: #f8fafc;
+  --el-bg-color-page: var(--bg);
+}
+
+/* ------------------------------ 基础重置 ------------------------------ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+figure {
+  margin: 0;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+}
+
+button {
+  font-family: inherit;
+}
+
+a {
+  color: var(--brand);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------------ 滚动条美化 ------------------------------ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ------------------------------ 通用工具类 ------------------------------ */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+}
+
+.text-muted {
+  color: var(--text-secondary);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* ------------------------------ Markdown 渲染体 ------------------------------ */
+.md-body {
+  color: var(--text);
+  font-size: 14.5px;
+  line-height: 1.75;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.md-body > *:first-child {
+  margin-top: 0;
+}
+
+.md-body > *:last-child {
+  margin-bottom: 0;
+}
+
+.md-body p {
+  margin: 0 0 10px;
+}
+
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4 {
+  margin: 16px 0 8px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.md-body h1 {
+  font-size: 19px;
+}
+
+.md-body h2 {
+  font-size: 17px;
+}
+
+.md-body h3 {
+  font-size: 15.5px;
+}
+
+.md-body h4 {
+  font-size: 14.5px;
+}
+
+.md-body ul,
+.md-body ol {
+  margin: 6px 0 10px;
+  padding-left: 22px;
+}
+
+.md-body li {
+  margin: 4px 0;
+}
+
+.md-body li > ul,
+.md-body li > ol {
+  margin: 4px 0;
+}
+
+.md-body strong {
+  font-weight: 600;
+  color: #0b1220;
+}
+
+.md-body em {
+  font-style: italic;
+}
+
+.md-body code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: #f1f5f9;
+  color: #0f172a;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.md-body pre {
+  margin: 10px 0;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+
+.md-body pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.md-body blockquote {
+  margin: 10px 0;
+  padding: 6px 14px;
+  border-left: 3px solid var(--brand-border);
+  background: var(--brand-weak);
+  color: var(--text-secondary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.md-body hr {
+  margin: 14px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.md-body table {
+  width: 100%;
+  margin: 10px 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.md-body th,
+.md-body td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.md-body th {
+  background: #f8fafc;
+  font-weight: 600;
+}
+
+/* ------------------------------ Element Plus 细节统一 ------------------------------ */
+.el-button {
+  font-weight: 500;
+}
+
+.el-drawer__header {
+  margin-bottom: 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--divider);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.el-drawer__body {
+  padding: 18px 20px 24px;
+  overflow-y: auto;
+}
+
+.el-table th.el-table__cell {
+  background: #f8fafc !important;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.el-upload-dragger {
+  border-radius: var(--radius);
+  border-color: var(--border-strong);
+  background: #fbfdfe;
+}
+
+.el-upload-dragger:hover {
+  border-color: var(--brand);
+}

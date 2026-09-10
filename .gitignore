@@ -1,0 +1,58 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.Python
+
+# ---------- 虚拟环境 ----------
+.venv/
+venv/
+env/
+
+# ---------- 测试与工具缓存 ----------
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ---------- 密钥与本地配置 ----------
+.env
+.env.local
+*.local.env
+
+# ---------- 运行期数据（语料与向量库按需纳入版本管理） ----------
+backend/data/chroma/
+backend/data/uploads/
+backend/data/app.db
+backend/data/*.log
+pip-install.log
+server.log
+
+# ---------- 构建产物 ----------
+# backend/web 是前端 dist 的拷贝：容器里由 Dockerfile 生成，
+# 本地做「单容器同源托管」验证时也会临时生成，都不应进版本库
+backend/web/
+
+# ---------- 临时调试文件 ----------
+sse_raw.txt
+repro.txt
+img_result.json
+
+# ---------- 前端 ----------
+node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+yarn-error.log*
+
+# ---------- 编辑器与系统 ----------
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
