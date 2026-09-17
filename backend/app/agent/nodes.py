@@ -11,10 +11,16 @@
 | preprocess | 输入净化、图片解码与预处理 | 不判意图 |
 | route | 意图分类（规则优先 + LLM 兜底） | 不做检索 |
 | vision_analyze | 调 VL 模型产出结构化诊断 | 不生成面向用户的回答 |
+| check_completeness | 判断信息是否足够，决定追问还是作答 | 不生成追问文案、不检索 |
+| clarify | 把判定结果渲染成结构化追问 | 不判断是否需要追问 |
 | build_query | 把视觉/文本转成检索意图 | 不执行检索 |
 | retrieve | 混合检索 + 拼上下文 | 不做重排以外的加工 |
 | generate | 调 LLM 产出自然语言回答（流式） | 不做安全审查 |
 | safety_review | 规则审查 + 答案合规化 | 不改写医学内容 |
+
+`check_completeness` 与 `clarify` 刻意拆成两个节点：前者只做「要不要问」的判定并落库进度，
+后者只做「怎么问」的文案渲染。这样追问的**决策逻辑**可以在不渲染任何文本的情况下被精确测试
+（见 `tests/test_clarify.py`），文案改版也不会碰判定逻辑。
 """
 
 from __future__ import annotations
@@ -33,6 +39,7 @@ from app.core.parsing import extract_json
 from app.core.prompts import ROUTER_PROMPT
 from app.schemas.chat import Intent
 from app.schemas.diagnosis import SafetyReport, VisionDiagnosis
+from app.services.clarify_service import ClarifyService
 from app.services.fusion_service import FusionService
 from app.services.llm_factory import get_fast_llm, get_text_llm
 from app.services.retrieval_service import RetrievalService
@@ -77,6 +84,7 @@ class AgentNodes:
         retrieval_service: RetrievalService,
         fusion_service: FusionService,
         safety_service: SafetyService,
+        clarify_service: ClarifyService,
     ) -> None:
         """注入依赖。
 
@@ -85,11 +93,13 @@ class AgentNodes:
             retrieval_service: 混合检索服务。
             fusion_service: 融合服务（检索意图构造 + 链构建）。
             safety_service: 安全审查服务。
+            clarify_service: 信息完备性判断与追问澄清服务。
         """
         self.vision_service = vision_service
         self.retrieval_service = retrieval_service
         self.fusion_service = fusion_service
         self.safety_service = safety_service
+        self.clarify_service = clarify_service
         self._chains: dict[str, Any] = {}
 
     # ------------------------------------------------------------------
@@ -164,9 +174,14 @@ class AgentNodes:
         而 90% 的情况用关键词就能判准）：
 
         1. 有图片（且预处理成功）→ 图片诊断；
-        2. 命中皮肤关键词 → 知识库问答；
+        2. 命中皮肤关键词，**或该会话有未完成的追问** → 知识库问答；
         3. 匹配寒暄模板 → 闲聊；
         4. 其余交给轻量模型分类，失败则回落到知识库问答。
+
+        第 2 条里「有未完成的追问」这一半是追问机制能收敛的前提：
+        追问后的回复往往是碎片（「三天了」「不知道」），既不含皮肤关键词，
+        也匹配不上寒暄模板。若不特殊处理，它们会被判成闲聊或交给 LLM 兜底，
+        追问进度就永远推进不到「兜底作答」，用户会卡在只被追问、拿不到回答的状态。
 
         Args:
             state: 当前状态。
@@ -181,7 +196,14 @@ class AgentNodes:
             intent = Intent.IMAGE_DIAGNOSIS.value
         elif not question:
             intent = Intent.CHITCHAT.value
-        elif any(keyword in question for keyword in SKIN_KEYWORDS):
+        # 命中皮肤关键词，或该会话有未完成的追问时，都走知识库问答。
+        # 后半个条件是「多轮追问能收敛」的关键：用户在追问后的回复往往是碎片
+        # （「三天了」「不知道」），既不含皮肤关键词也匹配不上寒暄模板，
+        # 若放任它落到 LLM 兜底或闲聊，追问进度就永远推进不到兜底作答，
+        # 用户会卡在「一直被问、始终得不到回答」的状态。
+        elif any(keyword in question for keyword in SKIN_KEYWORDS) or state.get(
+            "clarify_pending"
+        ):
             intent = Intent.KB_QA.value
         elif _CHITCHAT_RE.match(question):
             intent = Intent.CHITCHAT.value
@@ -251,11 +273,107 @@ class AgentNodes:
             }
 
     # ------------------------------------------------------------------
+    # 3.5 信息完备性判断（追问澄清的决策点）
+    # ------------------------------------------------------------------
+
+    def check_completeness(self, state: AgentState) -> dict[str, Any]:
+        """判断信息是否足够，并在不足时登记一轮追问。
+
+        这是「追问澄清」机制的决策节点，**只做判定、不生成文案**：
+        判定结果写进 ``state["clarify"]``，同时把多轮进度（已收集信息、
+        待补字段、已用轮次）落库；文案交给下一个 ``clarify`` 节点渲染。
+
+        它继承了安全层的价值观，有四条旁路（优先级从高到低）：
+
+        1. **急症**：命中危险信号直接作答——追问会引入一轮往返延迟，
+           绝不能因为「想多问一句」而延误就医；
+        2. **用户要求直答**：说了「直接回答」「不想说」就尊重用户，转入兜底作答；
+        3. **知识提问**：「湿疹怎么护理」这类泛泛提问追问部位毫无意义；
+        4. **图片诊断**：视觉结果已提供部位/形态/颜色等维度，信息已较充分。
+
+        Args:
+            state: 当前状态。
+
+        Returns:
+            增量状态：``clarify`` / ``needs_clarification`` / ``case_summary`` / ``clarify_note``。
+        """
+        started = time.perf_counter()
+        question = state.get("question") or ""
+        session_id = state.get("session_id") or ""
+
+        try:
+            decision = self.clarify_service.evaluate(
+                session_id,
+                question,
+                has_image=bool(state.get("image_bytes")),
+                clarify_pending=bool(state.get("clarify_pending")),
+            )
+        except Exception as exc:  # noqa: BLE001 - 追问判定失败绝不能阻断回答
+            logger.error("信息完备性判断失败，直接进入回答流程：{}", exc)
+            return {
+                "clarify": None,
+                "needs_clarification": False,
+                "clarify_note": "",
+                "timings": _elapsed(state.get("timings") or {}, "check_completeness", started),
+            }
+
+        update: dict[str, Any] = {
+            "clarify": decision.to_dict(),
+            "needs_clarification": decision.needs_clarification,
+            "clarify_note": self.clarify_service.build_note(decision),
+        }
+        # 多轮累积的病例摘要：既让检索语句比「三天了，很痒」这句话更有信息量，
+        # 也让生成模型知道前面几轮到底问出了什么
+        if decision.facts_text:
+            update["case_summary"] = decision.facts_text
+
+        logger.info(
+            "完备性判断：追问={} 缺失={} 轮次={}/{} 旁路={}",
+            decision.needs_clarification,
+            decision.missing,
+            decision.round,
+            decision.max_rounds,
+            decision.bypassed_reason or "-",
+        )
+        update["timings"] = _elapsed(state.get("timings") or {}, "check_completeness", started)
+        return update
+
+    def clarify(self, state: AgentState) -> dict[str, Any]:
+        """把判定结果渲染成结构化的追问文案。
+
+        文案用确定性模板拼装而非调模型，理由有两条：
+        - **追问天然是结构化的**（「缺哪几项」直接决定「问哪几句」），模板比生成更准；
+        - 追问本身要占用一整轮往返，不该再叠加一次模型调用的延迟与失败风险。
+
+        产出的 ``answer`` 会照常经过 ``safety_review``，
+        因此免责声明与紧急横幅的保证在这里同样成立。
+
+        Args:
+            state: 当前状态。
+
+        Returns:
+            增量状态：``answer``（追问文本）。
+        """
+        started = time.perf_counter()
+        clarify = state.get("clarify") or {}
+        answer = self.clarify_service.build_question(clarify)
+        logger.info("生成追问：缺失 {} 项", len(clarify.get("missing_keys") or []))
+        return {
+            "answer": answer,
+            "timings": _elapsed(state.get("timings") or {}, "clarify", started),
+        }
+
+    # ------------------------------------------------------------------
     # 4. 构建检索意图（融合层）
     # ------------------------------------------------------------------
 
     def build_query(self, state: AgentState) -> dict[str, Any]:
         """把视觉结果 / 用户文本转成检索 query。
+
+        若存在多轮累积的 ``case_summary``（追问澄清收集来的维度），会拼在本轮问题之前：
+        用户补充信息那一轮说的话往往很短（「三天了，很痒」），
+        单靠这句话去检索召回质量很差，而「部位：面部；出现时间：3 天；伴随感觉：瘙痒」
+        的信息密度高得多。
 
         Args:
             state: 当前状态。
@@ -272,9 +390,12 @@ class AgentNodes:
         except Exception:  # noqa: BLE001 - 模型不可用时走纯规则路径
             llm = None
 
-        queries = self.fusion_service.build_queries(
-            state.get("question") or "", vision_obj, llm=llm
-        )
+        user_text = (state.get("question") or "").strip()
+        case_summary = (state.get("case_summary") or "").strip()
+        if case_summary:
+            user_text = f"{case_summary} {user_text}".strip()
+
+        queries = self.fusion_service.build_queries(user_text, vision_obj, llm=llm)
         logger.info("检索意图 {} 条：{}", len(queries), queries)
         return {
             "queries": queries,
@@ -354,7 +475,15 @@ class AgentNodes:
             payload = {"question": question, "history": history}
         else:
             chain = self._chain("kb_qa")
-            payload = {"context": context, "question": question, "history": history}
+            payload = {
+                "context": context,
+                "question": question,
+                # 信息足不足会改变回答的写法：缺口大时要给「如果……则可能……」的
+                # 条件化分析，而不是装作知道。默认值保证正常路径下这一节读起来通顺。
+                "clarify_note": state.get("clarify_note")
+                or "用户提供的信息基本完整，按常规流程作答。",
+                "history": history,
+            }
 
         try:
             response = await chain.ainvoke(payload)
@@ -425,13 +554,28 @@ class AgentNodes:
 
     @staticmethod
     def after_route(state: AgentState) -> str:
-        """route 之后的走向。"""
+        """route 之后的走向。
+
+        知识库问答先过 ``check_completeness`` 而不是直奔 ``build_query``：
+        信息不够时应该先追问，而不是拿一句「我脸上起了红疹」去检索出一堆泛泛的资料。
+        """
         intent = state.get("intent")
         if intent == Intent.IMAGE_DIAGNOSIS.value:
             return "vision_analyze"
         if intent == Intent.KB_QA.value:
-            return "build_query"
+            return "check_completeness"
         return "generate"
+
+    @staticmethod
+    def after_check_completeness(state: AgentState) -> str:
+        """check_completeness 之后的走向：追问，或进入正常回答流程。
+
+        能走到这个节点的只有知识库问答分支（图片与闲聊都在 route 处就分流出去了），
+        所以这里只需区分「追问」与「继续检索生成」两件事。
+        """
+        if state.get("needs_clarification"):
+            return "clarify"
+        return "build_query"
 
     @staticmethod
     def after_build_query(state: AgentState) -> str:

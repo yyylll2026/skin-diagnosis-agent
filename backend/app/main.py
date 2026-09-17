@@ -113,15 +113,38 @@ def create_app() -> FastAPI:
     async def handle_validation_error(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        """参数校验失败 -> 400，并把首个错误点出来，便于定位。"""
-        first = exc.errors()[0] if exc.errors() else {}
+        """参数校验失败 -> 400，并把首个错误点出来，便于定位。
+
+        ## 为什么要自己筛字段，而不是直接把 `exc.errors()` 丢回去
+
+        这是踩出来的两个坑：
+
+        1. **不能序列化**。校验器里 `raise ValueError(...)` 时，Pydantic 会把
+           原始异常对象放进 `ctx.error`，`JSONResponse` 序列化它直接抛 TypeError，
+           于是 400 变成 500。只要任何一个字段用了 `raise ValueError` 就会触发。
+        2. **会泄露用户提交的原文**。`errors()` 里带 `input`，而它正是本次请求的
+           字段值——密码字段一旦校验失败，密码就会原样回显到响应体里。
+
+        因此这里只保留「位置 + 原因 + 类型」三个字段：
+        对定位问题足够，既不会序列化失败，也不会把密码吐出去。
+        """
+        errors = exc.errors()
+        first = errors[0] if errors else {}
         location = ".".join(str(part) for part in first.get("loc", []))
+        cleaned = [
+            {
+                "loc": ".".join(str(part) for part in item.get("loc", [])),
+                "msg": str(item.get("msg", "")),
+                "type": str(item.get("type", "")),
+            }
+            for item in errors[:5]
+        ]
         return JSONResponse(
             status_code=400,
             content={
                 "code": "validation_error",
                 "message": f"请求参数有误：{location} {first.get('msg', '')}".strip(),
-                "detail": exc.errors()[:5],
+                "detail": cleaned,
             },
         )
 

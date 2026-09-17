@@ -88,6 +88,43 @@ class Settings(BaseSettings):
     # ---------------- 会话 ----------------
     session_history_turns: int = 6
 
+    # ---------------- 追问澄清（信息完备性判断） ----------------
+    clarify_enabled: bool = True
+    # 命中多少个「核心维度」才算信息足够。核心维度共 4 个：
+    #   出现时间 / 部位与范围 / 伴随感觉 / 变化趋势
+    # 取 3 表示「最多缺 1 项就作答」——既避免信息太少导致回答太泛，
+    # 也避免为了凑满 4 项而反复追问惹人烦。
+    # 调大 → 追问更积极但轮次更多；调小 → 更快作答但回答更泛。
+    clarify_min_dimensions: int = 3
+    # 追问轮次上限。达到上限仍不完备时转入「带缺口的兜底作答」：
+    # 条件化分析 + 说明缺失项的影响 + 就医提醒，而不是继续追问。
+    clarify_max_rounds: int = 2
+
+    # ---------------- 鉴权与权限 ----------------
+    # 默认关闭：现有 108 条测试与本地开发都依赖「匿名即可调用」。
+    # 关闭时所有请求被视为「合成管理员」，并跳过会话归属校验——
+    # 所以开关只影响「是否校验身份」，不改变任何既有接口的业务语义。
+    auth_enabled: bool = False
+    # 会话 cookie 名与密钥。用 JWT 时才必需，这里保留是因为
+    # 将来给 cookie 加签名或引入 CSRF token 都需要一个稳定的密钥源。
+    secret_key: str = "change-me-in-production"
+    auth_cookie_name: str = "skin_session"
+    # 公网 HTTPS 部署必须置 true，否则浏览器不会回传 cookie；
+    # 本地 http 下必须保持 false，否则会出现「登录成功但立刻又未登录」。
+    auth_cookie_secure: bool = False
+    # 绝对超时：从登录那一刻算起最长存活多久，到期强制重登
+    auth_session_ttl_hours: float = 12.0
+    # 空闲超时：多久无操作即失效（医疗数据场景收紧一些）
+    auth_idle_timeout_minutes: float = 120.0
+    # 登录失败锁定：连续失败 N 次后锁定 M 分钟
+    auth_max_failed_attempts: int = 5
+    auth_lockout_minutes: float = 15.0
+    # 是否允许自助注册。本部署选择开放注册；
+    # 关闭后只能由管理员建号（scripts/user_cli.py 创建初始管理员始终可用）。
+    auth_allow_registration: bool = True
+    # 密码最小长度。开放注册场景下这是第一道门，不宜过短。
+    auth_min_password_length: int = 8
+
     # ---------------- 超时 ----------------
     llm_timeout: float = 180.0
     vision_timeout: float = 300.0
@@ -110,6 +147,26 @@ class Settings(BaseSettings):
         """允许用逗号分隔的字符串书写 CORS 白名单。"""
         if isinstance(v, str):
             return [item.strip() for item in v.split(",") if item.strip()]
+        return v
+
+    @field_validator(
+        "chroma_dir",
+        "sqlite_path",
+        "data_root",
+        "web_dir",
+        mode="before",
+    )
+    @classmethod
+    def _empty_path_is_none(cls, v: object) -> object:
+        """`.env` 里写成空字符串时按未配置处理，回落到默认 data 目录。
+
+        否则 pydantic 会把 `SKIN_SQLITE_PATH=` 解析成 `Path('.')`，
+        sqlite 无法打开当前目录，健康检查直接 500。
+        """
+        if v is None:
+            return None
+        if isinstance(v, str) and not v.strip():
+            return None
         return v
 
     # ================= 派生路径 =================

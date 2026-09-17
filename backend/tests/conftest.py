@@ -18,6 +18,12 @@ os.environ.setdefault("SKIN_SQLITE_PATH", str(_TEST_ROOT / "app.db"))
 os.environ.setdefault("SKIN_CHROMA_DIR", str(_TEST_ROOT / "chroma"))
 # 测试不依赖 Ollama；需要向量的用例走 Chroma 内置向量函数
 os.environ.setdefault("SKIN_EMBEDDING_BACKEND", "chroma_default")
+# 固定鉴权关闭。模块级的 app 会读 backend/.env，而开发者本机可能把鉴权开着
+# （auth_enabled=true），那会让 test_api.py 的每个请求都变成 401。
+# 用 setdefault 而非 setdefault 之外的写法：环境变量优先级高于 .env 文件，
+# 所以这一行足以覆盖住本机配置。需要验证鉴权的用例自己构造开启鉴权的 app
+# （见 test_auth_api.py），不依赖这里的全局设置。
+os.environ.setdefault("SKIN_AUTH_ENABLED", "false")
 
 from app.config import Settings, get_settings  # noqa: E402
 

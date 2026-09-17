@@ -1,8 +1,11 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import ChatPanel from './components/ChatPanel.vue'
 import KnowledgePanel from './components/KnowledgePanel.vue'
+import LoginDialog from './components/LoginDialog.vue'
+import UserPanel from './components/UserPanel.vue'
 import { getHealth } from './api'
+import { useAuth } from './composables/useAuth'
 import { useSessions } from './composables/useSessions'
 
 const {
@@ -14,14 +17,52 @@ const {
   removeSession,
 } = useSessions()
 
+const {
+  authEnabled,
+  ready: authReady,
+  isLoggedIn,
+  isAdmin,
+  displayName,
+  can,
+  requireLogin,
+  bootstrap: bootstrapAuth,
+  installUnauthorizedHandler,
+  logout,
+} = useAuth()
+
 initSessions()
+// 先装 401 处理器，再探测登录态：否则启动阶段的请求若返回 401，
+// 会因为处理器尚未注册而被静默吞掉，界面停在半死状态
+installUnauthorizedHandler()
 
 const collapsed = ref(false)
 const knowledgeOpen = ref(false)
+const userPanelOpen = ref(false)
 
 const health = ref({ online: false, model: '', checked: false })
 const healthLoading = ref(false)
 let timer = null
+
+/**
+ * 是否允许使用对话功能。
+ *
+ * 鉴权关闭时（本地开发 / 单机部署）恒为真；开启时必须已登录。
+ * 这只是**界面门禁**——服务端每个接口都会独立校验身份与权限。
+ */
+const canUseApp = computed(() => !authEnabled.value || isLoggedIn.value)
+
+/** 知识库管理入口：需要写权限，客户不显示 */
+const canManageKnowledge = computed(() => can('kb:write') || can('kb:reindex'))
+
+/** 用户管理入口：仅管理员 */
+const canManageUsers = computed(() => isAdmin.value)
+
+async function onLogout() {
+  await logout()
+  // 清掉本地会话列表，避免下一个登录者看到上一个人的对话标题
+  sessions.value = []
+  createSession()
+}
 
 function firstBoolean(source, keys) {
   if (!source || typeof source !== 'object') return undefined
@@ -75,7 +116,10 @@ function onRemoveSession(id) {
   removeSession(id)
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // 先探测登录态（内部会读 /system/health 拿鉴权开关），再刷新 Ollama 状态灯。
+  // 顺序反过来的话，未登录时 refreshHealth 会先吃一个 401。
+  await bootstrapAuth()
   refreshHealth()
   timer = window.setInterval(refreshHealth, 30000)
 })
@@ -143,7 +187,31 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-show="!collapsed" class="sidebar-bottom">
-        <el-button class="kb-entry" plain @click="knowledgeOpen = true">知识库管理</el-button>
+        <!-- 入口按权限显隐。注意这只是体验优化：
+             客户即使手工调用 /kb/documents 也会在服务端拿到 403 -->
+        <el-button
+          v-if="canManageKnowledge"
+          class="kb-entry"
+          plain
+          @click="knowledgeOpen = true"
+        >
+          知识库管理
+        </el-button>
+        <el-button v-if="canManageUsers" class="kb-entry" plain @click="userPanelOpen = true">
+          用户与审计
+        </el-button>
+
+        <!-- 当前登录用户（鉴权开启时才显示） -->
+        <div v-if="authEnabled" class="account">
+          <div class="account-text">
+            <p class="account-name" :title="displayName">
+              {{ displayName || '未登录' }}
+            </p>
+            <p class="account-role">{{ isAdmin ? '管理员' : '客户' }}</p>
+          </div>
+          <el-button v-if="isLoggedIn" link size="small" @click="onLogout">登出</el-button>
+          <el-button v-else link size="small" @click="requireLogin()">登录</el-button>
+        </div>
 
         <div class="health">
           <span class="health-dot" :class="health.online ? 'is-ok' : 'is-bad'"></span>
@@ -170,10 +238,19 @@ onBeforeUnmount(() => {
     </aside>
 
     <main class="main">
-      <ChatPanel />
+      <!-- 未登录时不挂载 ChatPanel：既避免它发请求吃 401，
+           也避免用户看到一个可以打字但发不出去的界面 -->
+      <ChatPanel v-if="canUseApp" />
+      <div v-else class="gate">
+        <p class="gate-title">请先登录</p>
+        <p class="gate-text">本系统需要登录后使用。客户账号可提问并只读查看知识库。</p>
+        <el-button v-if="authReady" type="primary" @click="requireLogin()">登录 / 注册</el-button>
+      </div>
     </main>
 
     <KnowledgePanel v-model="knowledgeOpen" />
+    <UserPanel v-model="userPanelOpen" />
+    <LoginDialog />
   </div>
 </template>
 
@@ -463,6 +540,62 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   padding: 0;
   cursor: pointer;
+}
+
+/* ---------------------------- 当前账号 ---------------------------- */
+.account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-weak);
+  border: 1px solid var(--brand-border);
+}
+
+.account-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-name {
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-role {
+  font-size: 11.5px;
+  color: var(--brand);
+}
+
+/* ---------------------------- 未登录门禁 ---------------------------- */
+.gate {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+}
+
+.gate-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.gate-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  max-width: 340px;
+  line-height: 1.6;
+  margin-bottom: 4px;
 }
 
 /* ---------------------------- 右栏 ---------------------------- */

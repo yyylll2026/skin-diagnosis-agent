@@ -62,11 +62,36 @@ def test_unknown_question_falls_back_to_kb_qa() -> None:
 
 
 def test_after_route_branches() -> None:
-    """route 之后的三条分支判定。"""
+    """route 之后的三条分支判定。
+
+    知识问答的落点是 ``check_completeness`` 而不是 ``build_query``——
+    引入追问澄清机制后，想检索必须先证明信息够了（详见本文件末尾的
+    ``test_after_check_completeness_*``）。
+    """
     nodes = _route_nodes()
     assert nodes.after_route({"intent": Intent.IMAGE_DIAGNOSIS.value}) == "vision_analyze"
-    assert nodes.after_route({"intent": Intent.KB_QA.value}) == "build_query"
+    assert nodes.after_route({"intent": Intent.KB_QA.value}) == "check_completeness"
     assert nodes.after_route({"intent": Intent.CHITCHAT.value}) == "generate"
+
+
+def test_clarify_pending_keeps_consultation_alive() -> None:
+    """追问进行中时，即使这句话没有皮肤关键词，也要按「继续咨询」处理。
+
+    这是多轮追问能走到兜底分支的关键：用户回复「不知道」「三天了」这类碎片时，
+    若被当成闲聊或交给 LLM 兜底，追问进度就永远无法推进。
+    """
+    nodes = _route_nodes()
+    assert nodes.route({"question": "不知道", "clarify_pending": True})["intent"] == Intent.KB_QA.value
+    # 没有待补追问时，「不知道」会走 LLM 兜底（此处无模型，回落到 kb_qa）
+    routing = nodes.route({"question": "不知道"})["intent"]
+    assert routing in {Intent.KB_QA.value, Intent.CHITCHAT.value}
+
+
+def test_after_check_completeness_branches() -> None:
+    """信息完备性判断之后的两条分支。"""
+    nodes = _route_nodes()
+    assert nodes.after_check_completeness({"needs_clarification": True}) == "clarify"
+    assert nodes.after_check_completeness({"needs_clarification": False}) == "build_query"
 
 
 def test_after_build_query_skips_retrieval_when_disabled() -> None:

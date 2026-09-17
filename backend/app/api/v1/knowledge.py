@@ -3,6 +3,20 @@
 这些接口面向「运维/管理员」角色，前端由 ``KnowledgePanel.vue``（抽屉面板）消费。
 与对话接口分开的原因：知识库操作是**低频、耗时、幂等**的写操作，
 而对话是**高频、低延迟**的读操作，两者的超时策略、并发模型、错误语义都不同。
+
+## 权限分工
+
+读操作（列表、检索调试）要求 `kb:read`，客户端也有；
+写操作按破坏力拆成三个权限点，**刻意不合成一个 `kb:write`**：
+
+| 接口 | 权限点 | 为什么单独拆 |
+|---|---|---|
+| 上传 / 删除文档 | `kb:write` | 可恢复（重新上传即可） |
+| 重建索引 | `kb:reindex` | 耗时且会清空后重建，但数据可从 docs/ 恢复 |
+| 清空知识库 | `kb:reset` | **不可恢复**，破坏力最高 |
+
+拆开的价值在于：将来若要加一个「能维护文档但不能清库」的知识库编辑员角色，
+只需给他 `kb:write`，不必再改代码。
 """
 
 from __future__ import annotations
@@ -15,14 +29,26 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
 from app.config import Settings, get_settings
-from app.dependencies import get_ingest_service, get_metadata_store, get_retrieval_service
+from app.dependencies import (
+    get_ingest_service,
+    get_metadata_store,
+    get_retrieval_service,
+    require_permission,
+)
 from app.repositories import vector_store
 from app.repositories.db import MetadataStore
+from app.schemas.auth import UserInfo
 from app.schemas.knowledge import (
     DocumentInfo,
     IngestResult,
     SearchRequest,
     SearchResponse,
+)
+from app.services.auth_service import (
+    PERMISSION_KB_READ,
+    PERMISSION_KB_REINDEX,
+    PERMISSION_KB_RESET,
+    PERMISSION_KB_WRITE,
 )
 from app.services.ingest_service import SUPPORTED_SUFFIXES, IngestService
 from app.services.retrieval_service import RetrievalService
@@ -53,6 +79,7 @@ async def upload_document(
     title: Annotated[str | None, Form(description="自定义标题，默认取文件名")] = None,
     settings: Settings = Depends(get_settings),
     ingest: IngestService = Depends(get_ingest_service),
+    _: UserInfo = Depends(require_permission(PERMISSION_KB_WRITE)),
 ) -> IngestResult:
     """上传并入库一份文档。
 
@@ -86,6 +113,7 @@ async def upload_document(
 @router.get("/documents", summary="列出已入库文档", response_model=list[DocumentInfo])
 async def list_documents(
     store: Annotated[MetadataStore, Depends(get_metadata_store)],
+    _: Annotated[UserInfo, Depends(require_permission(PERMISSION_KB_READ))],
 ) -> list[DocumentInfo]:
     """列出全部已入库文档，按入库时间倒序。"""
     return store.list_documents()
@@ -94,9 +122,10 @@ async def list_documents(
 @router.delete("/documents/{doc_id}", summary="删除文档及其向量")
 async def delete_document(
     doc_id: str,
-    settings: Settings = Depends(get_settings),
-    store: MetadataStore = Depends(get_metadata_store),
-    ingest: IngestService = Depends(get_ingest_service),
+    settings: Annotated[Settings, Depends(get_settings)],
+    store: Annotated[MetadataStore, Depends(get_metadata_store)],
+    ingest: Annotated[IngestService, Depends(get_ingest_service)],
+    _: Annotated[UserInfo, Depends(require_permission(PERMISSION_KB_WRITE))],
 ) -> dict[str, Any]:
     """删除文档：清理向量块 + 元数据登记 + 上传文件。
 
@@ -125,6 +154,7 @@ async def delete_document(
 async def search_knowledge(
     payload: SearchRequest,
     retrieval: Annotated[RetrievalService, Depends(get_retrieval_service)],
+    _: Annotated[UserInfo, Depends(require_permission(PERMISSION_KB_READ))],
 ) -> SearchResponse:
     """直接调用混合检索链路，返回命中片段与分数。
 
@@ -143,8 +173,9 @@ async def search_knowledge(
 
 @router.post("/reindex", summary="重建全部索引")
 async def reindex(
-    settings: Settings = Depends(get_settings),
-    ingest: IngestService = Depends(get_ingest_service),
+    settings: Annotated[Settings, Depends(get_settings)],
+    ingest: Annotated[IngestService, Depends(get_ingest_service)],
+    _: Annotated[UserInfo, Depends(require_permission(PERMISSION_KB_REINDEX))],
 ) -> dict[str, Any]:
     """清空向量库并从 ``data/docs/`` 重新入库全部语料。
 
@@ -166,6 +197,7 @@ async def reindex(
 async def reset_knowledge_base(
     confirm: Annotated[bool, Query(description="必须显式传 true 才执行")] = False,
     store: MetadataStore = Depends(get_metadata_store),
+    _: UserInfo = Depends(require_permission(PERMISSION_KB_RESET)),
 ) -> dict[str, Any]:
     """清空向量库与文档登记表。
 

@@ -4,6 +4,15 @@
 即使 Ollama 挂了、embedding 模型没拉，接口也必须正常返回 200 并把问题写在
 ``warnings`` 里，而不是抛 5xx——否则前端会显示「服务异常」，
 用户根本看不到「该 ollama pull bge-m3」这种可操作的提示。
+
+## 鉴权在哪些地方介入
+
+- ``/system/health`` **保持公开**：它得回答「这个系统要不要登录」，
+  如果它自己都要登录，登录页就无从判断该不该显示。
+- ``/system/models`` 与 ``/system/graph`` 要求登录：它们暴露部署细节（模型名、
+  编排拓扑），对未认证访客没有价值。
+- ``/sessions*`` 要求登录，且**客户端只能看到自己的会话**——
+  这正是本次鉴权改造中改动面最大的一块，因为会话表原本没有归属概念。
 """
 
 from __future__ import annotations
@@ -15,12 +24,16 @@ from fastapi import APIRouter, Depends
 from app.agent.graph import graph_mermaid
 from app.config import Settings, get_settings
 from app.dependencies import (
+    get_auth_service,
+    get_current_user,
     get_metadata_store,
     get_ollama_client_dep,
 )
 from app.repositories import vector_store
 from app.repositories.db import MetadataStore
+from app.schemas.auth import UserInfo
 from app.schemas.chat import HealthResponse, ModelInfo, SessionHistory, SessionMessage
+from app.services.auth_service import AuthService
 from app.services.ollama_client import OllamaClient
 
 router = APIRouter(prefix="/system", tags=["系统"])
@@ -90,12 +103,15 @@ async def health(
         indexed_chunks=chunks,
         indexed_documents=len(documents),
         warnings=warnings,
+        auth_enabled=bool(settings.auth_enabled),
+        allow_registration=bool(settings.auth_allow_registration),
     )
 
 
 @router.get("/models", summary="列出 Ollama 可用模型", response_model=list[ModelInfo])
 async def list_models(
     client: Annotated[OllamaClient, Depends(get_ollama_client_dep)],
+    _: Annotated[UserInfo, Depends(get_current_user)],
 ) -> list[ModelInfo]:
     """列出本地 Ollama 已拉取的模型及其能力（vision / tools / thinking）。"""
     models = await client.list_models()
@@ -114,30 +130,52 @@ async def list_models(
 
 
 @router.get("/graph", summary="导出智能体流程图（Mermaid）")
-async def graph_definition() -> dict[str, Any]:
-    """返回 LangGraph 的 Mermaid 源码，便于在界面或文档中可视化编排拓扑。"""
+async def graph_definition(
+    _: Annotated[UserInfo, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """返回 LangGraph 的 Mermaid 源码，便于在界面或文档中可视化编排拓扑。
+
+    要求登录：编排拓扑属于部署细节，对未认证访客没有价值。
+    """
     return {"mermaid": graph_mermaid()}
 
 
 # ---------------------------------------------------------------------------
 # 会话
+#
+# 三个接口都加了两道逻辑：必须登录，且客户端只能触及自己的会话。
+# 归属过滤放在 `visible_user_id_for_sessions`，访问校验放在
+# `ensure_session_access`——两者都在服务层，因为它们是业务不变量，
+# 将来从 CLI 或后台任务访问会话时同样要生效。
 # ---------------------------------------------------------------------------
 
 
 @sessions_router.get("", summary="列出会话")
 async def list_sessions(
     store: Annotated[MetadataStore, Depends(get_metadata_store)],
+    auth: Annotated[AuthService, Depends(get_auth_service)],
+    user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> list[dict[str, Any]]:
-    """列出全部会话（按最近活跃倒序）。"""
-    return store.list_sessions()
+    """列出会话（按最近活跃倒序）。
+
+    客户端只返回自己的会话；管理员返回全部（其具有 `session:read_all`）。
+    """
+    return store.list_sessions(user_id=auth.visible_user_id_for_sessions(user))
 
 
 @sessions_router.get("/{session_id}", summary="获取会话历史", response_model=SessionHistory)
 async def get_session(
     session_id: str,
     store: Annotated[MetadataStore, Depends(get_metadata_store)],
+    auth: Annotated[AuthService, Depends(get_auth_service)],
+    user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> SessionHistory:
-    """获取指定会话的消息历史（时间正序）。"""
+    """获取指定会话的消息历史（时间正序）。
+
+    Raises:
+        PermissionDeniedError: 该会话属于其他用户（403）。
+    """
+    auth.ensure_session_access(session_id, user)
     rows = store.list_messages(session_id, limit=200)
     return SessionHistory(
         session_id=session_id,
@@ -157,7 +195,14 @@ async def get_session(
 async def delete_session(
     session_id: str,
     store: Annotated[MetadataStore, Depends(get_metadata_store)],
+    auth: Annotated[AuthService, Depends(get_auth_service)],
+    user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> dict[str, Any]:
-    """删除会话及其全部消息。"""
+    """删除会话及其全部消息。
+
+    Raises:
+        PermissionDeniedError: 该会话属于其他用户（403）。
+    """
+    auth.ensure_session_access(session_id, user)
     store.delete_session(session_id)
     return {"deleted": True, "session_id": session_id}

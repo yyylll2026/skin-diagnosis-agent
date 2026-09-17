@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import ImageUploader from './ImageUploader.vue'
 import DiagnosisCard from './DiagnosisCard.vue'
+import ClarifyCard from './ClarifyCard.vue'
 import SourceList from './SourceList.vue'
 import { streamAgentChat } from '../api'
 import { renderMarkdown } from '../utils/markdown'
@@ -14,6 +15,8 @@ const NODES = {
   preprocess: { label: '预处理输入', active: '正在预处理输入…' },
   route: { label: '意图识别', active: '正在识别意图…' },
   vision_analyze: { label: '图像分析', active: '正在分析图像…' },
+  check_completeness: { label: '信息完备性判断', active: '正在判断信息是否充分…' },
+  clarify: { label: '生成追问', active: '正在整理需要补充的信息…' },
   build_query: { label: '构建检索意图', active: '正在构建检索意图…' },
   retrieve: { label: '检索知识库', active: '正在检索知识库…' },
   generate: { label: '生成回答', active: '正在生成回答…' },
@@ -78,6 +81,15 @@ function resolveSources(data) {
   return []
 }
 
+function resolveClarify(data) {
+  if (!data || typeof data !== 'object') return null
+  if (Array.isArray(data.missing) || Array.isArray(data.missing_keys)) return data
+  if (data.data && typeof data.data === 'object') return data.data
+  // 兜底：后端把判定结果放在 done 事件的 clarify 字段里
+  if (data.clarify && typeof data.clarify === 'object') return data.clarify
+  return null
+}
+
 /* ---------------- 发送 / 停止 ---------------- */
 
 function onKeydown(event) {
@@ -116,6 +128,7 @@ async function send() {
     nodeLabel: '',
     nodeText: '',
     diagnosis: null,
+    clarify: null,
     sources: [],
     status: 'loading',
     error: '',
@@ -162,6 +175,11 @@ async function send() {
           if (diagnosis) reply.diagnosis = diagnosis
           scheduleScroll()
         },
+        onClarify: (data) => {
+          const clarify = resolveClarify(data)
+          if (clarify) reply.clarify = clarify
+          scheduleScroll()
+        },
         onSources: (data) => {
           const list = resolveSources(data)
           if (list.length) reply.sources = list
@@ -171,7 +189,13 @@ async function send() {
           reply.content += text
           scheduleScroll()
         },
-        onDone: () => finish('done'),
+        onDone: (data) => {
+          // done 事件里也带一份 clarify：若中途的 clarify 事件丢失，
+          // 这里仍能补上结构化信息，卡片不会凭空消失
+          const clarify = resolveClarify(data)
+          if (clarify) reply.clarify = clarify
+          finish('done')
+        },
         onError: (err) => {
           reply.error = err?.message || '生成失败，请重试'
           finish('error')
@@ -256,6 +280,8 @@ onBeforeUnmount(() => {
             </p>
 
             <DiagnosisCard v-if="msg.diagnosis" :diagnosis="msg.diagnosis" />
+
+            <ClarifyCard v-if="msg.clarify" :clarify="msg.clarify" />
 
             <SourceList v-if="Array.isArray(msg.sources) && msg.sources.length" :sources="msg.sources" />
 

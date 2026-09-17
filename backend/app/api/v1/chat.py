@@ -28,11 +28,21 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.agent.runner import AgentRunner
 from app.config import Settings, get_settings
-from app.dependencies import get_metadata_store, get_runner_dep
+from app.dependencies import (
+    get_auth_service,
+    get_clarify_service,
+    get_current_user,
+    get_metadata_store,
+    get_runner_dep,
+)
 from app.repositories.db import MetadataStore
+from app.schemas.auth import UserInfo
 from app.schemas.chat import ChatRequest, ChatResponse, Intent
+from app.schemas.clarify import ClarifyState
 from app.schemas.diagnosis import DiagnosisResult, ImageMeta, SafetyReport, VisionDiagnosis
 from app.schemas.knowledge import RetrievedChunk
+from app.services.auth_service import PERMISSION_CHAT_USE, AuthService
+from app.services.clarify_service import ClarifyService
 
 router = APIRouter(tags=["对话与诊断"])
 
@@ -111,9 +121,15 @@ def _stream_response(
 @router.post("/agent/chat", summary="智能体统一入口（图文混合，支持 SSE 流式）")
 async def agent_chat(
     payload: ChatRequest,
+    # 鉴权依赖刻意排在其它依赖之前：FastAPI 按签名顺序解析依赖，
+    # 排在前面才能在未登录时「快速失败」，而不必先编译状态图、准备检索服务
+    # 才发现用户没登录。这也是一条通用原则——越便宜、越基础的校验越靠前。
+    auth: Annotated[AuthService, Depends(get_auth_service)],
+    user: Annotated[UserInfo, Depends(get_current_user)],
     settings: Annotated[Settings, Depends(get_settings)],
     store: Annotated[MetadataStore, Depends(get_metadata_store)],
     runner: Annotated[AgentRunner, Depends(get_runner_dep)],
+    clarify: Annotated[ClarifyService, Depends(get_clarify_service)],
 ) -> Any:
     """图文混合对话入口。
 
@@ -121,9 +137,23 @@ async def agent_chat(
     - ``stream=false`` 返回完整 JSON，适合脚本调用与自动化测试。
 
     会话 ID 为空时由后端生成并回传，前端后续请求沿用同一个 ID 即可获得多轮上下文。
+
+    信息完备性判断需要知道「上一轮是否问了追问却还没得到补充」，这个事实从 SQLite 读出后
+    作为 ``clarify_pending`` 注入状态——节点因此保持无状态、纯函数，也可被直接测试。
+
+    鉴权方面有三件事：鉴权开启时调用方需具备 `chat:use`（两个角色都有）；
+    会话会绑定到当前用户；若传入的 session_id 属于他人则直接 403。
+
+    Raises:
+        AuthenticationError: 未登录（鉴权开启时）。
+        PermissionDeniedError: 试图使用他人的会话。
     """
     session_id = payload.session_id or _new_session_id()
-    store.ensure_session(session_id, title=(payload.message or "图片咨询")[:30])
+    auth.ensure_permission(user, PERMISSION_CHAT_USE)
+    auth.ensure_session_access(session_id, user)
+    store.ensure_session(
+        session_id, title=(payload.message or "图片咨询")[:30], user_id=user.user_id
+    )
 
     if payload.message.strip():
         store.add_message(
@@ -139,6 +169,7 @@ async def agent_chat(
         image_mime=payload.image_mime,
         use_knowledge=payload.use_knowledge,
         history=_load_history(store, session_id, settings),
+        clarify_pending=clarify.has_pending(session_id),
     )
 
     if not payload.stream:
@@ -153,6 +184,7 @@ async def agent_chat(
             vision=VisionDiagnosis.model_validate(vision) if vision else None,
             sources=[RetrievedChunk.model_validate(item) for item in (final.get("sources") or [])],
             safety=SafetyReport.model_validate(final.get("safety") or {}),
+            clarify=ClarifyState.model_validate(final.get("clarify") or {}),
             elapsed_ms=int(sum((final.get("timings") or {}).values())),
         )
 
@@ -162,18 +194,33 @@ async def agent_chat(
 @router.post("/chat/qa", summary="知识库问答（纯文本，支持 SSE 流式）")
 async def chat_qa(
     payload: ChatRequest,
+    auth: Annotated[AuthService, Depends(get_auth_service)],
+    user: Annotated[UserInfo, Depends(get_current_user)],
     settings: Annotated[Settings, Depends(get_settings)],
     store: Annotated[MetadataStore, Depends(get_metadata_store)],
     runner: Annotated[AgentRunner, Depends(get_runner_dep)],
+    clarify: Annotated[ClarifyService, Depends(get_clarify_service)],
 ) -> Any:
     """纯文本知识库问答。
 
     是 ``/agent/chat`` 的语义化别名：忽略图片字段，强制走「检索 → 生成」链路。
     单独保留这个接口，是为了让前端「文字问答」入口的契约更清晰，
     也便于对 RAG 效果做单变量测试（不掺杂视觉分支）。
+
+    鉴权依赖在此**再声明一次**而不是靠委托：如果只依赖 `agent_chat` 的守卫，
+    那么将来有人改了这个函数的转发逻辑，权限就会悄悄失效。
+    权限声明写在被暴露的接口上，才不会因为重构而漏掉。
     """
     text_only = payload.model_copy(update={"image_base64": None})
-    return await agent_chat(text_only, settings=settings, store=store, runner=runner)
+    return await agent_chat(
+        text_only,
+        settings=settings,
+        store=store,
+        runner=runner,
+        clarify=clarify,
+        auth=auth,
+        user=user,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +231,8 @@ async def chat_qa(
 @router.post("/diagnosis/image", summary="图片识别与诊断（multipart 上传）")
 async def diagnose_image(
     file: Annotated[UploadFile, File(description="皮肤照片，支持 jpg/png/webp")],
+    auth: Annotated[AuthService, Depends(get_auth_service)],
+    user: Annotated[UserInfo, Depends(get_current_user)],
     session_id: Annotated[str | None, Form()] = None,
     note: Annotated[str, Form(description="用户补充描述")] = "",
     use_knowledge: Annotated[bool, Form(description="是否检索知识库补充依据")] = True,
@@ -204,6 +253,7 @@ async def diagnose_image(
 
     Raises:
         ImageValidationError: 图片格式不支持、体积超限或已损坏。
+        PermissionDeniedError: 试图向他人的会话追加内容。
     """
     from app.core.errors import ImageValidationError
 
@@ -214,7 +264,9 @@ async def diagnose_image(
 
     raw = await file.read()
     session_id = session_id or _new_session_id()
-    store.ensure_session(session_id, title="图片诊断")
+    auth.ensure_permission(user, PERMISSION_CHAT_USE)
+    auth.ensure_session_access(session_id, user)
+    store.ensure_session(session_id, title="图片诊断", user_id=user.user_id)
     store.add_message(session_id, "user", note or "[上传了一张皮肤照片]", has_image=True)
 
     state = AgentRunner.build_state(

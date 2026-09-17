@@ -34,6 +34,10 @@ class AgentState(TypedDict, total=False):
     image_bytes: bytes | None
     image_mime: str
     use_knowledge: bool
+    # 本轮之前是否处于「追问未完成」状态。
+    # 由 API 层从 SQLite 读出后注入，使 route/节点的判定保持纯函数（不碰数据库），
+    # 也便于测试直接构造状态。
+    clarify_pending: bool
 
     # ---- 中间产物 ----
     intent: str
@@ -42,6 +46,14 @@ class AgentState(TypedDict, total=False):
     queries: list[str]
     sources: list[dict[str, Any]]
     context: str
+    # 多轮累积的病例摘要（如「部位与范围：面部；出现时间：3 天」），
+    # 由 check_completeness 从追问进度中还原，供检索与生成复用。
+    case_summary: str
+
+    # ---- 追问澄清 ----
+    needs_clarification: bool
+    clarify: dict[str, Any] | None
+    clarify_note: str
 
     # ---- 输出 ----
     answer: str
@@ -57,17 +69,26 @@ NODE_LABELS: dict[str, str] = {
     "preprocess": "预处理输入",
     "route": "意图识别",
     "vision_analyze": "图像分析",
+    "check_completeness": "信息完备性判断",
+    "clarify": "生成追问",
     "build_query": "构建检索意图",
     "retrieve": "检索知识库",
     "generate": "生成回答",
     "safety_review": "安全审查",
 }
 
-# 图执行顺序（用于前端展示进度条）
+# 节点全集（大致按执行顺序排列）。实际走向依条件边而定：
+#   route ─┬─ vision_analyze ─┐
+#          ├─ check_completeness ─┬─ clarify ─┐
+#          │                      └─ build_query ─ retrieve ─┐
+#          └─ generate ◄────────────────────────────────────┘
+#                     └─ safety_review
 NODE_ORDER: list[str] = [
     "preprocess",
     "route",
     "vision_analyze",
+    "check_completeness",
+    "clarify",
     "build_query",
     "retrieve",
     "generate",

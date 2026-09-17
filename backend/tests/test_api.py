@@ -148,3 +148,92 @@ def test_response_carries_timing_header() -> None:
     """所有响应都带服务端耗时头，便于联调定位慢点。"""
     response = client.get("/")
     assert "X-Elapsed-Ms" in response.headers
+
+
+# ---------------------------------------------------------------------------
+# 追问澄清：端到端（不依赖 Ollama）
+#
+# 这条链路在本轮请求内只经过 preprocess → route → check_completeness → clarify
+# → safety_review，**没有任何模型调用**（判定与文案都是确定性规则），
+# 所以可以在单测里完整跑通，包括免责声明的追加与多轮进度的持久化。
+# ---------------------------------------------------------------------------
+
+
+def test_clarify_flow_returns_structured_followup_without_llm() -> None:
+    """信息不足时返回结构化追问，而不是硬着头皮作答。"""
+    session = "s-e2e-clarify-1"
+    response = client.post(
+        f"{API}/chat/qa",
+        json={"session_id": session, "message": "我脸上起了红疹", "stream": False},
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    clarify = body["clarify"]
+    assert clarify["needs_clarification"] is True
+    assert clarify["round"] == 1
+    assert "出现时间" in clarify["missing"]
+    assert clarify["collected"].get("部位与范围") == "脸"
+
+    # 追问文本要结构化：逐条列出缺失维度并说明为什么问
+    assert "出现时间" in body["answer"]
+    assert "为什么要问" in body["answer"]
+    # 没有检索、没有生成（因为压根没进入回答流程）
+    assert body["sources"] == []
+    # 但免责声明照常追加——追问分支同样经过 safety_review
+    assert "不能替代" in body["answer"]
+
+
+def test_clarify_flow_advances_to_second_round() -> None:
+    """第二轮仍未补齐时继续追问，且轮次递增、已收集信息累积。"""
+    session = "s-e2e-clarify-2"
+    client.post(
+        f"{API}/chat/qa",
+        json={"session_id": session, "message": "我脸上起了红疹", "stream": False},
+    )
+    response = client.post(
+        f"{API}/chat/qa",
+        json={"session_id": session, "message": "感觉不太舒服", "stream": False},
+    )
+    assert response.status_code == 200
+    clarify = response.json()["clarify"]
+
+    assert clarify["needs_clarification"] is True
+    assert clarify["round"] == 2
+    # 上一轮收集到的部位要延续下来
+    assert clarify["collected"].get("部位与范围") == "脸"
+
+
+def test_clarify_user_skip_falls_back_instead_of_asking_again() -> None:
+    """用户说「说不清 / 直接回答」时不再追问，转为兜底作答。"""
+    session = "s-e2e-clarify-3"
+    client.post(
+        f"{API}/chat/qa",
+        json={"session_id": session, "message": "我脸上起了红疹", "stream": False},
+    )
+    response = client.post(
+        f"{API}/chat/qa",
+        json={"session_id": session, "message": "说不清，直接回答吧", "stream": False},
+    )
+    assert response.status_code == 200
+    clarify = response.json()["clarify"]
+    assert clarify["needs_clarification"] is False
+    assert clarify["fallback"] is True
+    assert clarify["bypassed_reason"] == "user_skip"
+
+
+def test_urgent_case_never_gets_clarified() -> None:
+    """急症不追问——这是追问机制最重要的安全约束。
+
+    注意危险信号会让请求继续走检索与生成，因此这里只断言
+    「没有发起追问」，不断言答案内容（那取决于模型）。
+    """
+    session = "s-e2e-clarify-urgent"
+    response = client.post(
+        f"{API}/chat/qa",
+        json={"session_id": session, "message": "我这颗痣迅速增大还出血", "stream": False},
+    )
+    assert response.status_code == 200
+    clarify = response.json()["clarify"]
+    assert clarify["needs_clarification"] is False
+    assert clarify["bypassed_reason"] == "urgent"

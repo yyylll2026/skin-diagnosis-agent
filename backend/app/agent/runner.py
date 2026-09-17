@@ -7,13 +7,14 @@ LangGraph 的 ``astream_events`` 吐的是框架内部事件（``on_chain_start`
 如果让 API 层直接处理这些，会把框架细节泄漏到接口契约里，
 将来换编排框架就得重写前端。
 
-因此这里做一次**协议收敛**，对外只暴露 8 种事件：
+因此这里做一次**协议收敛**，对外只暴露 9 种事件：
 
 | 事件 | 触发时机 | 前端动作 |
 |------|---------|---------|
 | ``meta`` | 请求受理 / 意图确定 | 初始化消息气泡、显示意图 |
 | ``node`` | 每个节点开始/结束 | 更新「正在做什么」进度 |
 | ``vision`` | 视觉分析节点完成 | 渲染结构化诊断卡片 |
+| ``clarify`` | 信息完备性判断完成 | 渲染「已了解 / 待补充」追问卡片 |
 | ``sources`` | 检索节点完成 | 渲染参考来源列表 |
 | ``token`` | 生成节点逐 token | 追加流式文本 |
 | ``answer`` | 兜底整段答案 | 覆盖文本（token 丢失时的补偿） |
@@ -25,6 +26,10 @@ LangGraph 的 ``astream_events`` 吐的是框架内部事件（``on_chain_start`
 ``on_chat_model_stream`` 只告诉我们「有模型在流式输出」，不说是哪个节点。
 由于本图是**线性执行**的（没有并行分支），用一个 ``in_generate`` 标志位
 在 generate 节点开始/结束时翻转即可准确归属，不必解析 run 树。
+
+> 新增 ``check_completeness`` 与 ``clarify`` 节点后这个前提依然成立：
+> 两者都是同步节点、不调用流式模型，不会产生 ``on_chat_model_stream`` 事件。
+> 一旦将来引入并行分支，这个标志位就必须换成 run 树解析（或每个分支一个标志）。
 """
 
 from __future__ import annotations
@@ -89,6 +94,7 @@ class AgentRunner:
         image_mime: str = "image/jpeg",
         use_knowledge: bool = True,
         history: list[BaseMessage] | None = None,
+        clarify_pending: bool = False,
     ) -> dict[str, Any]:
         """构造初始状态。
 
@@ -99,6 +105,9 @@ class AgentRunner:
             image_mime: 图片 MIME。
             use_knowledge: 是否启用知识库检索。
             history: 最近若干轮历史消息。
+            clarify_pending: 该会话此前是否有未完成的追问。
+                由 API 层从 SQLite 读出后传入——节点因此不必碰数据库，
+                「追问进行中」这个事实也变成了可测试的普通入参。
 
         Returns:
             初始状态字典。
@@ -110,6 +119,7 @@ class AgentRunner:
             "image_bytes": image_base64,
             "image_mime": image_mime,
             "use_knowledge": use_knowledge,
+            "clarify_pending": clarify_pending,
             "errors": [],
             "timings": {},
         }
@@ -148,6 +158,7 @@ class AgentRunner:
         answer_parts: list[str] = []
         final_answer = ""
         safety: dict[str, Any] | None = None
+        clarify: dict[str, Any] | None = None
         errors: list[str] = []
         detected_intent: str | None = None
 
@@ -197,6 +208,10 @@ class AgentRunner:
                     if name == "vision_analyze" and output.get("vision"):
                         yield {"type": "vision", "data": output["vision"]}
 
+                    if name == "check_completeness" and output.get("clarify"):
+                        clarify = output["clarify"]
+                        yield {"type": "clarify", "data": clarify}
+
                     if name == "retrieve":
                         yield {"type": "sources", "data": output.get("sources") or []}
 
@@ -235,6 +250,7 @@ class AgentRunner:
             "elapsed_ms": int((time.perf_counter() - started) * 1000),
             "answer": final_answer or streamed,
             "safety": safety,
+            "clarify": clarify,
             "has_image": bool(state.get("image_bytes")),
             "intent": detected_intent
             or (

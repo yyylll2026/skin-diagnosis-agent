@@ -10,6 +10,10 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "python-multipart>=0.0.12",
+    # ---- 鉴权 ----
+    # 直接用 bcrypt 而不是 passlib：passlib 已基本停止维护，
+    # 而我们只需要 hashpw/checkpw 两个函数，不值得引入一层包装。
+    "bcrypt>=4.0.0",
     "sse-starlette>=2.1.3",
     "httpx>=0.27.2",
     # ---- 配置与校验 ----

@@ -105,6 +105,63 @@ class EmbeddingError(AppError):
     http_status = 503
 
 
+# ---------------------------------------------------------------------------
+# 鉴权与权限
+#
+# 401 与 403 的区别必须严格：401 表示「你没登录」（前端应弹登录框），
+# 403 表示「你登录了但没权限」（前端应提示无权限，不该弹登录框）。
+# 混用会导致已登录用户被反复要求登录，或客户看到无意义的登录提示。
+# ---------------------------------------------------------------------------
+
+
+class AuthenticationError(AppError):
+    """未登录或凭据无效/已过期。"""
+
+    code = "unauthenticated"
+    http_status = 401
+
+
+class PermissionDeniedError(AppError):
+    """已登录但角色权限不足。"""
+
+    code = "forbidden"
+    http_status = 403
+
+
+class CredentialsError(AppError):
+    """用户名或密码错误。
+
+    刻意与 `AuthenticationError` 分开：前者是「凭据不对」（登录接口用），
+    后者是「没有有效会话」（守卫用）。两者的 message 也不同——
+    凭据错误的提示必须是模糊的（不区分用户名不存在 / 密码错误），
+    避免被用来枚举已注册用户。
+    """
+
+    code = "invalid_credentials"
+    http_status = 401
+
+
+class UserConflictError(AppError):
+    """用户名已被占用。"""
+
+    code = "user_conflict"
+    http_status = 409
+
+
+class AccountLockedError(AppError):
+    """账号因连续登录失败被临时锁定。"""
+
+    code = "account_locked"
+    http_status = 423
+
+
+class AccountDisabledError(AppError):
+    """账号已被管理员禁用。"""
+
+    code = "account_disabled"
+    http_status = 403
+
+
 def error_payload(exc: BaseException) -> dict[str, Any]:
     """把任意异常压成统一响应体。"""
     if isinstance(exc, AppError):

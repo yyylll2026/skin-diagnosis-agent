@@ -6,6 +6,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.clarify import ClarifyState
 from app.schemas.diagnosis import SafetyReport, VisionDiagnosis
 from app.schemas.knowledge import RetrievedChunk
 
@@ -73,6 +74,8 @@ class ChatResponse(BaseModel):
     vision: VisionDiagnosis | None = None
     sources: list[RetrievedChunk] = Field(default_factory=list)
     safety: SafetyReport = Field(default_factory=SafetyReport)
+    # 信息完备性判断的结果：needs_clarification=true 时 answer 里是结构化追问
+    clarify: ClarifyState = Field(default_factory=ClarifyState)
     elapsed_ms: int = 0
 
 
@@ -118,3 +121,8 @@ class HealthResponse(BaseModel):
     indexed_chunks: int = 0
     indexed_documents: int = 0
     warnings: list[str] = Field(default_factory=list)
+    # 鉴权状态。前端据此决定是否弹登录框、是否显示「注册」入口。
+    # 本接口必须保持公开（否则登录页连「系统是否要求登录」都问不到），
+    # 因此这里只暴露开关本身，不暴露任何账号信息。
+    auth_enabled: bool = False
+    allow_registration: bool = False
