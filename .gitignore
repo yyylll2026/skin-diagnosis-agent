@@ -29,8 +29,21 @@ backend/data/chroma/
 backend/data/uploads/
 backend/data/app.db
 backend/data/*.log
+
+# ---------- 日志 ----------
+# .log 是 stdout 重定向，.err 是 stderr 重定向；历史上只忽略了前者，
+# 导致 backend/server.err、frontend/vite.err 一直被当成待提交文件。
 pip-install.log
 server.log
+*.log
+*.err
+
+# ---------- 误放在 backend/ 根目录的残留 ----------
+# backend/chroma.sqlite3：SKIN_SQLITE_PATH 为空值时的历史 bug 产物
+#   （空串被解析成 Path('.')，Chroma 把库建到了 backend/ 而非 backend/data/chroma/），已修复。
+# backend/package-lock.json：在 backend/ 误执行 npm install 产生的空 lockfile，backend 下没有 package.json。
+backend/chroma.sqlite3
+backend/package-lock.json
 
 # ---------- 构建产物 ----------
 # backend/web 是前端 dist 的拷贝：容器里由 Dockerfile 生成，
@@ -56,3 +69,8 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ---------- 本地智能体工作目录 ----------
+# 存放开发期间的会话记忆与中间报告，属于本机工作状态而非项目产物；
+# 需要归档的正式文档统一放 docs/。
+.workbuddy/
