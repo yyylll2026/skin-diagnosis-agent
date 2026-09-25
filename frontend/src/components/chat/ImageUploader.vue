@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { formatBytes } from '../../utils/common'
 
 const props = defineProps({
   modelValue: {
@@ -24,13 +25,7 @@ const fileInput = ref(null)
 
 const image = computed(() => props.modelValue || null)
 
-const sizeText = computed(() => {
-  const bytes = image.value?.size || 0
-  if (!bytes) return ''
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-})
+const sizeText = computed(() => formatBytes(image.value?.size))
 
 function guessMime(name) {
   const lower = String(name || '').toLowerCase()
@@ -157,7 +152,7 @@ onBeforeUnmount(() => {
         <p class="preview-name" :title="image.name">{{ image.name }}</p>
         <p class="preview-size">{{ sizeText }} · {{ image.mime }}</p>
       </div>
-      <button class="preview-remove" type="button" title="移除图片" @click="clear">×</button>
+      <button class="preview-remove" type="button" title="移除图片" aria-label="移除图片" @click="clear">×</button>
     </div>
   </div>
 </template>
@@ -178,7 +173,7 @@ onBeforeUnmount(() => {
   padding: 9px 12px;
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-sm);
-  background: #fbfdfe;
+  background: var(--surface-soft);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   user-select: none;
@@ -236,7 +231,7 @@ onBeforeUnmount(() => {
   object-fit: cover;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--card-bg);
 }
 
 .preview-meta {

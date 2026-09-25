@@ -1,0 +1,36 @@
+/* ===================================================================
+   Element Plus 细节统一（全局覆盖，保持与主题 token 一致）
+   =================================================================== */
+
+.el-button {
+  font-weight: 500;
+}
+
+.el-drawer__header {
+  margin-bottom: 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--divider);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.el-drawer__body {
+  padding: 18px 20px 24px;
+  overflow-y: auto;
+}
+
+.el-table th.el-table__cell {
+  background: var(--surface-subtle) !important;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.el-upload-dragger {
+  border-radius: var(--radius);
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+}
+
+.el-upload-dragger:hover {
+  border-color: var(--brand);
+}

@@ -98,7 +98,7 @@ const fallbackHint = computed(() => {
 .round-badge {
   font-size: 11.5px;
   color: var(--brand);
-  background: #ffffff;
+  background: var(--card-bg);
   border: 1px solid var(--brand-border);
   border-radius: 999px;
   padding: 1px 8px;
@@ -129,7 +129,7 @@ const fallbackHint = computed(() => {
 }
 
 .chip.is-known {
-  background: #ffffff;
+  background: var(--card-bg);
   border-color: var(--brand-border);
   color: var(--text);
 }

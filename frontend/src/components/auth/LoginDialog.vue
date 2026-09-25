@@ -1,6 +1,6 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { useAuth } from '../composables/useAuth'
+import { useAuth } from '../../composables/useAuth'
 
 /**
  * 登录 / 注册对话框。
@@ -83,7 +83,7 @@ watch(loginOpen, (open) => {
   <el-dialog
     v-model="loginOpen"
     :title="title"
-    width="380px"
+    width="min(380px, 92vw)"
     align-center
     :close-on-click-modal="false"
     :close-on-press-escape="isLoggedIn"

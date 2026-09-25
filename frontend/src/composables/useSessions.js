@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue'
+import { uid } from '../utils/common'
 
 /**
  * 会话状态：模块级 ref（不引入 pinia），App 与 ChatPanel 共享同一份状态。
@@ -12,10 +13,6 @@ const STORAGE_KEY = 'skin-diagnosis:sessions:v1'
 const sessions = ref([])
 const currentId = ref(null)
 let initialized = false
-
-function uid() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-}
 
 function safeParse(raw) {
   try {

@@ -19,7 +19,7 @@ const d = computed(() => props.diagnosis || {})
 
 const risk = computed(() => {
   const key = String(d.value.risk_level || '').toLowerCase()
-  return RISK_META[key] || { label: '未评估', color: 'var(--text-secondary)', bg: '#f1f5f9' }
+  return RISK_META[key] || { label: '未评估', color: 'var(--text-secondary)', bg: 'var(--surface-hover)' }
 })
 
 const hypotheses = computed(() => {
@@ -156,9 +156,9 @@ function barColor(percent) {
   padding: 6px 10px;
   margin-bottom: 12px;
   border-radius: var(--radius-sm);
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  color: #92400e;
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  color: var(--warning-text);
   font-size: 12.5px;
   font-weight: 500;
 }
@@ -171,7 +171,7 @@ function barColor(percent) {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: #f59e0b;
+  background: var(--warning-icon);
   color: #fff;
   font-size: 11px;
   font-weight: 700;
@@ -251,7 +251,7 @@ function barColor(percent) {
   margin-top: 5px;
   height: 6px;
   border-radius: 999px;
-  background: #e6eef2;
+  background: var(--surface-track);
   overflow: hidden;
 }
 
@@ -310,7 +310,7 @@ function barColor(percent) {
   display: inline-block;
   padding: 0 7px;
   border-radius: 4px;
-  background: #eef4f7;
+  background: var(--surface-tint);
   border: 1px solid var(--border);
   font-size: 12px;
   color: #334155;
@@ -342,7 +342,7 @@ function barColor(percent) {
   position: relative;
   padding-left: 13px;
   font-size: 12.5px;
-  color: #991b1b;
+  color: var(--danger-text);
   line-height: 1.6;
 }
 

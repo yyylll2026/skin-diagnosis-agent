@@ -1,9 +1,17 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { deleteDocument, listDocuments, searchKnowledge, uploadDocument } from '../api'
+import { deleteDocument, listDocuments, searchKnowledge, uploadDocument } from '../../api'
+import SourceCard from '../common/SourceCard.vue'
+import { useSidebar } from '../../composables/useSidebar'
+import { normalizeSource, pickList } from '../../utils/common'
 
 const visible = defineModel({ type: Boolean, default: false })
+
+const { isMobile } = useSidebar()
+
+/** 窄屏下抽屉占满全宽 */
+const drawerSize = computed(() => (isMobile.value ? '100%' : '620px'))
 
 const CATEGORIES = ['皮肤疾病', '用药指南', '护理建议', '其他']
 
@@ -32,14 +40,6 @@ function normalizeDoc(raw) {
     chunk_count: item.chunk_count ?? item.chunks ?? item.num_chunks ?? item.chunk_num ?? 0,
     created_at: item.created_at ?? item.created_time ?? item.upload_time ?? item.time ?? '',
   }
-}
-
-function pickList(data) {
-  if (Array.isArray(data)) return data
-  if (Array.isArray(data?.documents)) return data.documents
-  if (Array.isArray(data?.items)) return data.items
-  if (Array.isArray(data?.data)) return data.data
-  return []
 }
 
 async function loadDocuments() {
@@ -108,19 +108,6 @@ async function removeDoc(row) {
   }
 }
 
-function normalizeHit(raw, index) {
-  const item = raw || {}
-  const score = typeof item.score === 'number' ? item.score : null
-  return {
-    key: item.doc_id ?? item.id ?? `hit-${index}`,
-    title: item.title ?? item.source ?? item.filename ?? `命中片段 ${index + 1}`,
-    source: item.source ?? '',
-    category: item.category ?? '',
-    text: item.snippet ?? item.content ?? item.text ?? item.chunk ?? '',
-    scoreText: score === null ? '—' : `${Math.round(score <= 1 ? score * 100 : score)}%`,
-  }
-}
-
 async function runSearch() {
   const text = query.value.trim()
   if (!text) {
@@ -130,8 +117,8 @@ async function runSearch() {
   searching.value = true
   try {
     const data = await searchKnowledge(text, 5)
-    const list = Array.isArray(data) ? data : data?.results || data?.items || data?.data || []
-    results.value = (Array.isArray(list) ? list : []).map(normalizeHit)
+    const list = pickList(data, ['results', 'items', 'data'])
+    results.value = list.map((item, index) => normalizeSource(item, index, '命中片段'))
     searched.value = true
   } catch (err) {
     results.value = []
@@ -142,11 +129,15 @@ async function runSearch() {
   }
 }
 
-watch(visible, (open) => {
-  if (open) {
-    loadDocuments()
-  }
-})
+// immediate：面板由父级懒加载（首次打开才挂载），
+// 挂载时 visible 已为 true，需要立即加载一次文档列表
+watch(
+  visible,
+  (open) => {
+    if (open) loadDocuments()
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
@@ -154,7 +145,7 @@ watch(visible, (open) => {
     v-model="visible"
     title="知识库管理"
     direction="rtl"
-    size="620px"
+    :size="drawerSize"
     :destroy-on-close="false"
   >
     <section class="section">
@@ -228,19 +219,7 @@ watch(visible, (open) => {
       </div>
 
       <div v-if="results.length" class="hits">
-        <div v-for="(hit, index) in results" :key="`${hit.key}-${index}`" class="hit">
-          <div class="hit-head">
-            <span class="hit-title">{{ hit.title }}</span>
-            <span class="hit-score">{{ hit.scoreText }}</span>
-          </div>
-          <div class="hit-tags">
-            <el-tag v-if="hit.category" size="small" effect="plain" type="info">
-              {{ hit.category }}
-            </el-tag>
-            <span v-if="hit.source" class="hit-source">{{ hit.source }}</span>
-          </div>
-          <p v-if="hit.text" class="hit-text">{{ hit.text }}</p>
-        </div>
+        <SourceCard v-for="(hit, index) in results" :key="`${hit.key}-${index}`" :item="hit" />
       </div>
       <p v-else-if="searched && !searching" class="hits-empty">未检索到相关内容</p>
     </section>
@@ -312,64 +291,6 @@ watch(visible, (open) => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.hit {
-  padding: 9px 11px;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--brand-border);
-  border-radius: var(--radius-sm);
-  background: #fbfdfe;
-}
-
-.hit-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hit-title {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hit-score {
-  flex: 0 0 auto;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--brand);
-  background: var(--brand-weak);
-  border: 1px solid var(--brand-border);
-  border-radius: 999px;
-  padding: 1px 8px;
-}
-
-.hit-tags {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 5px;
-}
-
-.hit-source {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hit-text {
-  margin-top: 6px;
-  font-size: 12.5px;
-  line-height: 1.65;
-  color: var(--text-secondary);
 }
 
 .hits-empty {

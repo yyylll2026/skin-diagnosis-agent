@@ -1,5 +1,7 @@
 /* ===================================================================
    皮肤诊断智能体 · 全局主题（浅色）
+   只放设计 token、基础重置与全局工具类；
+   Markdown 渲染体见 markdown.css，Element Plus 覆盖见 element-overrides.css
    =================================================================== */
 
 :root {
@@ -16,6 +18,13 @@
   --card-bg: #ffffff;
   --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.05);
   --card-shadow-hover: 0 2px 6px rgba(15, 23, 42, 0.06), 0 10px 26px rgba(15, 23, 42, 0.08);
+
+  /* 功能表面色（原散落在组件里的硬编码浅灰，统一收敛到这里） */
+  --surface-subtle: #f8fafc;   /* 表头 / 状态卡底色 */
+  --surface-hover: #f1f5f9;    /* 列表项 hover */
+  --surface-soft: #fbfdfe;     /* 拖拽区 / 来源条目底色 */
+  --surface-tint: #eef4f7;     /* 观察项 chip 底色 */
+  --surface-track: #e6eef2;    /* 置信度进度条轨道 */
 
   /* 文本 */
   --text: #0f172a;
@@ -42,8 +51,13 @@
   --danger: #dc2626;
   --danger-bg: #fef2f2;
   --danger-border: #fecaca;
+  --danger-text: #991b1b;      /* 错误 / 危险信号里的深红正文 */
   --success: #16a34a;
   --warning: #d97706;
+  --warning-bg: #fffbeb;
+  --warning-border: #fde68a;
+  --warning-text: #92400e;
+  --warning-icon: #f59e0b;
 
   /* 尺寸 */
   --radius-sm: 6px;
@@ -70,7 +84,7 @@
   --el-text-color-regular: #334155;
   --el-border-color: var(--border);
   --el-border-color-light: var(--divider);
-  --el-fill-color-light: #f8fafc;
+  --el-fill-color-light: var(--surface-subtle);
   --el-bg-color-page: var(--bg);
 }
 
@@ -130,6 +144,26 @@ a:hover {
   text-decoration: underline;
 }
 
+/* 键盘导航可见焦点（鼠标点击不触发） */
+button:focus-visible,
+a:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* 尊重系统减弱动效设置 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* ------------------------------ 滚动条美化 ------------------------------ */
 * {
   scrollbar-width: thin;
@@ -146,14 +180,14 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--border-strong);
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--text-muted);
   background-clip: content-box;
 }
 
@@ -175,170 +209,4 @@ a:hover {
 
 .mono {
   font-family: var(--font-mono);
-}
-
-/* ------------------------------ Markdown 渲染体 ------------------------------ */
-.md-body {
-  color: var(--text);
-  font-size: 14.5px;
-  line-height: 1.75;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-.md-body > *:first-child {
-  margin-top: 0;
-}
-
-.md-body > *:last-child {
-  margin-bottom: 0;
-}
-
-.md-body p {
-  margin: 0 0 10px;
-}
-
-.md-body h1,
-.md-body h2,
-.md-body h3,
-.md-body h4 {
-  margin: 16px 0 8px;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--text);
-}
-
-.md-body h1 {
-  font-size: 19px;
-}
-
-.md-body h2 {
-  font-size: 17px;
-}
-
-.md-body h3 {
-  font-size: 15.5px;
-}
-
-.md-body h4 {
-  font-size: 14.5px;
-}
-
-.md-body ul,
-.md-body ol {
-  margin: 6px 0 10px;
-  padding-left: 22px;
-}
-
-.md-body li {
-  margin: 4px 0;
-}
-
-.md-body li > ul,
-.md-body li > ol {
-  margin: 4px 0;
-}
-
-.md-body strong {
-  font-weight: 600;
-  color: #0b1220;
-}
-
-.md-body em {
-  font-style: italic;
-}
-
-.md-body code {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  background: #f1f5f9;
-  color: #0f172a;
-  padding: 1px 5px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-}
-
-.md-body pre {
-  margin: 10px 0;
-  padding: 12px 14px;
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  overflow-x: auto;
-}
-
-.md-body pre code {
-  background: transparent;
-  border: none;
-  padding: 0;
-  font-size: 12.5px;
-  line-height: 1.6;
-}
-
-.md-body blockquote {
-  margin: 10px 0;
-  padding: 6px 14px;
-  border-left: 3px solid var(--brand-border);
-  background: var(--brand-weak);
-  color: var(--text-secondary);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-}
-
-.md-body hr {
-  margin: 14px 0;
-  border: none;
-  border-top: 1px solid var(--border);
-}
-
-.md-body table {
-  width: 100%;
-  margin: 10px 0;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.md-body th,
-.md-body td {
-  border: 1px solid var(--border);
-  padding: 6px 10px;
-  text-align: left;
-}
-
-.md-body th {
-  background: #f8fafc;
-  font-weight: 600;
-}
-
-/* ------------------------------ Element Plus 细节统一 ------------------------------ */
-.el-button {
-  font-weight: 500;
-}
-
-.el-drawer__header {
-  margin-bottom: 0;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--divider);
-  color: var(--text);
-  font-weight: 600;
-}
-
-.el-drawer__body {
-  padding: 18px 20px 24px;
-  overflow-y: auto;
-}
-
-.el-table th.el-table__cell {
-  background: #f8fafc !important;
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-.el-upload-dragger {
-  border-radius: var(--radius);
-  border-color: var(--border-strong);
-  background: #fbfdfe;
-}
-
-.el-upload-dragger:hover {
-  border-color: var(--brand);
 }

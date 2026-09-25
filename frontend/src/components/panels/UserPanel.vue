@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createUser,
@@ -9,8 +9,9 @@ import {
   listUsers,
   resetUserPassword,
   updateUser,
-} from '../api'
-import { useAuth } from '../composables/useAuth'
+} from '../../api'
+import { useAuth } from '../../composables/useAuth'
+import { useSidebar } from '../../composables/useSidebar'
 
 /**
  * 用户管理抽屉（仅管理员可见）。
@@ -23,17 +24,13 @@ import { useAuth } from '../composables/useAuth'
  * 前端只需要把服务端返回的 403 原因展示出来即可——
  * 否则规则要写两遍，迟早不一致。
  */
-const props = defineProps({
-  modelValue: { type: Boolean, default: false },
-})
-const emit = defineEmits(['update:modelValue'])
+const visible = defineModel({ type: Boolean, default: false })
 
 const { user: currentUser } = useAuth()
+const { isMobile } = useSidebar()
 
-const visible = computed({
-  get: () => props.modelValue,
-  set: (value) => emit('update:modelValue', value),
-})
+/** 窄屏下抽屉占满全宽 */
+const drawerSize = computed(() => (isMobile.value ? '100%' : '720px'))
 
 const tab = ref('users')
 const loading = ref(false)
@@ -82,17 +79,14 @@ function refresh() {
   else loadLogs()
 }
 
-watch(visible, (open) => {
-  if (open) refresh()
-})
-
-watch(tab, () => {
-  if (visible.value) refresh()
-})
-
-onMounted(() => {
-  if (visible.value) refresh()
-})
+// immediate：面板由父级懒加载（首次打开才挂载），挂载时即需拉一次数据
+watch(
+  [visible, tab],
+  () => {
+    if (visible.value) refresh()
+  },
+  { immediate: true }
+)
 
 /** 统一的「执行 + 报错 + 刷新」包装，省掉每个操作重复一遍 try/catch */
 async function run(action, successText) {
@@ -189,7 +183,7 @@ function isSelf(row) {
 </script>
 
 <template>
-  <el-drawer v-model="visible" title="用户与审计" size="720px" direction="rtl">
+  <el-drawer v-model="visible" title="用户与审计" :size="drawerSize" direction="rtl">
     <el-tabs v-model="tab">
       <el-tab-pane label="用户管理" name="users">
         <div class="toolbar">
@@ -311,10 +305,13 @@ function isSelf(row) {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
 .search {
   max-width: 260px;
+  flex: 1;
+  min-width: 160px;
 }
 
 .table {
