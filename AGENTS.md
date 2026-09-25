@@ -35,6 +35,7 @@ Makefile 使用 `.RECIPEPREFIX = >`（不是 Tab）。在 Windows 上 `PYTHON` �
 ## 架构要点（改代码前必读）
 
 - 请求链路：`app/api/v1` → `app/agent`（`preprocess → route → … → generate → safety_review`）→ `app/services`。`main.py` 只做装配与横切关注点。
+- **模型后端开关**：`SKIN_LLM_BACKEND=ollama|cloud`（`app/config.py` + `app/services/model_gateway.py` + `llm_factory.py`）。业务编排只依赖工厂与网关接口；不要在节点里直接 new 客户端。云端用 `Dockerfile.cloud` / `docs/云端API部署.md`。
 - **融合约束**：`vision_analyze` 之后必须经过 `build_query`（见 `app/agent/graph.py`），不能从视觉节点直接跳到 `generate`。闲聊可直达 `generate`，检索可被跳过，但所有出口都要过 `safety_review`。
 - **安全不变量**（`app/services/safety_service.py`）：风险等级只上调不下调；免责声明由代码幂等追加，不依赖模型。改诊断/生成路径时不要破坏这两条（有测试锁住）。
 - **静态托管顺序**：`StaticFiles` 挂在 `/` 必须在 API 路由**之后**注册，否则会吞掉 API。`tests/test_api.py` 有回归测试。

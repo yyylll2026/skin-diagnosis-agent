@@ -58,6 +58,8 @@ Chroma（向量）· SQLite（元数据）· Ollama（qwen2.5vl:7b · bge-m3）
 
 - 📐 **[系统设计文档](docs/系统设计文档.md)** — 架构、数据流、检索链路、融合方案、ADR、部署
 - 🔌 **[接口文档](docs/接口文档.md)** — 全部接口定义、SSE 协议、数据模型、错误码、接入示例
+- ☁️ **[云端API部署](docs/云端API部署.md)** — 不跑 Ollama，用百炼等 OpenAI 兼容 API 上免费 PaaS
+- 🐳 **[魔搭创空间](deploy/README.md)** — 容器内 Ollama 单容器部署
 
 ## 快速开始
 
@@ -65,7 +67,8 @@ Chroma（向量）· SQLite（元数据）· Ollama（qwen2.5vl:7b · bge-m3）
 
 - Python ≥ 3.11
 - Node ≥ 18
-- [Ollama](https://ollama.com/) 已安装并运行
+- [Ollama](https://ollama.com/) 已安装并运行  
+  **或** 改用云端 VL API（见 [`docs/云端API部署.md`](docs/云端API部署.md)，`SKIN_LLM_BACKEND=cloud`，无需本机模型）
 
 ### 1. 准备模型
 

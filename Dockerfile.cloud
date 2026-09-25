@@ -1,0 +1,67 @@
+# =============================================================================
+# 云端 VL API 单容器镜像（Render / Fly.io / Railway 等小内存免费档）
+#
+# 与根目录 Dockerfile 的区别：
+#   根目录 Dockerfile → 打包 Ollama，适合魔搭等有 8~16G 内存的平台
+#   本文件            → **不含 Ollama**，模型调用走 SKIN_LLM_BACKEND=cloud
+#                       （阿里云百炼 OpenAI 兼容端点），512MB 内存也能跑
+#
+# 平台约定：读环境变量 PORT；进程必须前台常驻；支持健康检查 URL。
+# =============================================================================
+
+# ---------- 阶段 1：构建前端 ----------
+FROM node:22-alpine AS web
+WORKDIR /web
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+
+# ---------- 阶段 2：运行时（无 Ollama） ----------
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app/backend
+
+# 可编辑安装（-e）：config.py 用 __file__ 推导 BACKEND_DIR，路径不能跑偏
+COPY backend/pyproject.toml backend/README.md ./
+COPY backend/app ./app
+COPY backend/scripts ./scripts
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -e .
+
+COPY --from=web /web/dist ./web
+COPY backend/data/docs ./seed_docs
+
+# 云端默认：不跑 Ollama；向量可用云端 embedding 或 chroma_default
+ENV SKIN_LLM_BACKEND=cloud \
+    SKIN_CLOUD_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1 \
+    SKIN_EMBEDDING_BACKEND=cloud \
+    SKIN_VISION_MODEL=qwen-vl-plus \
+    SKIN_TEXT_MODEL=qwen-plus \
+    SKIN_FAST_MODEL=qwen-turbo \
+    SKIN_CLOUD_EMBEDDING_MODEL=text-embedding-v3 \
+    SKIN_DATA_ROOT=/var/lib/skin \
+    SKIN_WEB_DIR=/app/backend/web \
+    SKIN_AUTO_SEED=1 \
+    SKIN_IMAGE_MAX_SIDE=1024 \
+    SKIN_MAX_IMAGE_MB=8 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Render/Fly 注入 PORT；缺省 7860 兼容魔搭习惯
+ENV PORT=7860
+
+EXPOSE 7860
+
+HEALTHCHECK --interval=60s --timeout=10s --start-period=45s --retries=3 \
+    CMD curl -fsS "http://127.0.0.1:${PORT}/api/v1/system/health" || exit 1
+
+# 单 worker：免费档 CPU 紧张，且本地 Chroma/SQLite 不适合多进程抢写
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 1"]

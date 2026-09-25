@@ -30,9 +30,10 @@ FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# curl 用于探活与拉模型；ca-certificates 供 Ollama 访问模型仓库
+# curl 用于探活与拉模型；ca-certificates 供 Ollama 访问模型仓库；
+# zstd：新版 Ollama 安装包用 zstd 压缩，缺了会在 install.sh 里直接失败
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && apt-get install -y --no-install-recommends curl ca-certificates zstd \
     && rm -rf /var/lib/apt/lists/*
 
 # 官方安装脚本会判断发行版并解压到 /usr/local/bin/ollama

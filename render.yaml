@@ -1,0 +1,37 @@
+# Render 免费 Web Service（云端 VL API 方案）
+# 控制台创建时选 "Existing Dockerfile" 或直接用本仓库根目录自动识别。
+#
+# 必配 Environment（Secrets）：
+#   DASHSCOPE_API_KEY 或 SKIN_CLOUD_API_KEY  —— 阿里云百炼 API Key
+#   SKIN_SECRET_KEY                          —— 随机长字符串（开登录时）
+#
+# 可选：
+#   SKIN_AUTH_ENABLED=true
+#   SKIN_AUTH_COOKIE_SECURE=true
+
+services:
+  - type: web
+    name: skin-diagnosis-agent
+    runtime: docker
+    dockerfilePath: ./Dockerfile.cloud
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: PORT
+        value: "7860"
+      - key: SKIN_LLM_BACKEND
+        value: cloud
+      - key: SKIN_EMBEDDING_BACKEND
+        value: cloud
+      - key: SKIN_AUTH_ENABLED
+        value: "true"
+      - key: SKIN_AUTH_COOKIE_SECURE
+        value: "true"
+      - key: SKIN_AUTH_ALLOW_REGISTRATION
+        value: "true"
+      - key: DASHSCOPE_API_KEY
+        sync: false
+      - key: SKIN_SECRET_KEY
+        sync: false
+    healthCheckPath: /api/v1/system/health
+    autoDeploy: true

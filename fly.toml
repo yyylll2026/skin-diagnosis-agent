@@ -1,0 +1,35 @@
+# Fly.io 免费档（云端 VL API 方案）
+# 用法：fly launch --copy-config --no-deploy，再 fly secrets set ...
+#
+# fly secrets set DASHSCOPE_API_KEY=... SKIN_SECRET_KEY=...
+# fly deploy
+
+app = "skin-diagnosis-agent"
+
+[build]
+  dockerfile = "Dockerfile.cloud"
+
+[env]
+  PORT = "7860"
+  SKIN_LLM_BACKEND = "cloud"
+  SKIN_EMBEDDING_BACKEND = "cloud"
+  SKIN_AUTH_ENABLED = "true"
+  SKIN_AUTH_COOKIE_SECURE = "true"
+  SKIN_AUTH_ALLOW_REGISTRATION = "true"
+
+[http_service]
+  internal_port = 7860
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "60s"
+    timeout = "10s"
+    method = "GET"
+    path = "/api/v1/system/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
