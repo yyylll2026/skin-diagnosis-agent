@@ -1,3 +1,13 @@
+---
+domain: multi-modal
+tags:
+  - 医疗健康
+  - 多模态
+  - 皮肤诊断
+  - 检索增强
+license: Apache License 2.0
+---
+
 # 皮肤诊断智能体 · Skin Diagnosis Agent
 
 > 基于 **Ollama（Qwen2.5-VL）+ LangGraph + Chroma + FastAPI + Vue 3** 的本地化皮肤诊断辅助系统。

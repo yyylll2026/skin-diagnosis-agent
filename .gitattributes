@@ -19,3 +19,58 @@ Dockerfile text eol=lf
 *.webp binary
 *.pdf binary
 *.docx binary
+
+# =============================================================================
+# 以下为魔搭创空间平台注入的 LFS 规则（勿删）
+#
+# 平台把模型权重、数据集等大文件交给 git-lfs 托管。这段刻意放在文件末尾：
+# gitattributes 的匹配是「后出现的规则优先」，LFS 的 -text 必须压过上面的
+# 通用 `* text=auto eol=lf`，否则大文件会被当成文本处理而损坏。
+# =============================================================================
+*.7z filter=lfs diff=lfs merge=lfs -text
+*.arrow filter=lfs diff=lfs merge=lfs -text
+*.bin filter=lfs diff=lfs merge=lfs -text
+*.bin.* filter=lfs diff=lfs merge=lfs -text
+*.bz2 filter=lfs diff=lfs merge=lfs -text
+*.ftz filter=lfs diff=lfs merge=lfs -text
+*.gz filter=lfs diff=lfs merge=lfs -text
+*.h5 filter=lfs diff=lfs merge=lfs -text
+*.joblib filter=lfs diff=lfs merge=lfs -text
+*.lfs.* filter=lfs diff=lfs merge=lfs -text
+*.model filter=lfs diff=lfs merge=lfs -text
+*.msgpack filter=lfs diff=lfs merge=lfs -text
+*.onnx filter=lfs diff=lfs merge=lfs -text
+*.ot filter=lfs diff=lfs merge=lfs -text
+*.parquet filter=lfs diff=lfs merge=lfs -text
+*.pb filter=lfs diff=lfs merge=lfs -text
+*.pt filter=lfs diff=lfs merge=lfs -text
+*.pth filter=lfs diff=lfs merge=lfs -text
+*.rar filter=lfs diff=lfs merge=lfs -text
+saved_model/**/* filter=lfs diff=lfs merge=lfs -text
+*.tar.* filter=lfs diff=lfs merge=lfs -text
+*.tflite filter=lfs diff=lfs merge=lfs -text
+*.tgz filter=lfs diff=lfs merge=lfs -text
+*.xz filter=lfs diff=lfs merge=lfs -text
+*.zip filter=lfs diff=lfs merge=lfs -text
+*.zstandard filter=lfs diff=lfs merge=lfs -text
+*.tfevents* filter=lfs diff=lfs merge=lfs -text
+*.db* filter=lfs diff=lfs merge=lfs -text
+*.ark* filter=lfs diff=lfs merge=lfs -text
+**/*ckpt*data* filter=lfs diff=lfs merge=lfs -text
+**/*ckpt*.meta filter=lfs diff=lfs merge=lfs -text
+**/*ckpt*.index filter=lfs diff=lfs merge=lfs -text
+*.safetensors filter=lfs diff=lfs merge=lfs -text
+*.ckpt filter=lfs diff=lfs merge=lfs -text
+*.gguf* filter=lfs diff=lfs merge=lfs -text
+*.ggml filter=lfs diff=lfs merge=lfs -text
+*.llamafile* filter=lfs diff=lfs merge=lfs -text
+*.pt2 filter=lfs diff=lfs merge=lfs -text
+*.mlmodel filter=lfs diff=lfs merge=lfs -text
+*.npy filter=lfs diff=lfs merge=lfs -text
+*.npz filter=lfs diff=lfs merge=lfs -text
+*.pickle filter=lfs diff=lfs merge=lfs -text
+*.pkl filter=lfs diff=lfs merge=lfs -text
+*.tar filter=lfs diff=lfs merge=lfs -text
+*.wasm filter=lfs diff=lfs merge=lfs -text
+*.zst filter=lfs diff=lfs merge=lfs -text
+*tfevents* filter=lfs diff=lfs merge=lfs -text
