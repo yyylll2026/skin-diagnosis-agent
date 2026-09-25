@@ -48,22 +48,78 @@ from app.services.vision_service import VisionService
 
 # 皮肤相关关键词：命中即走知识库问答，无需调 LLM 做意图分类（省 1~2 秒）
 SKIN_KEYWORDS: tuple[str, ...] = (
-    "皮肤", "皮损", "皮疹", "湿疹", "瘙痒", "痒", "红疹", "疙瘩", "斑点", "痘",
-    "痤疮", "粉刺", "痘印", "荨麻疹", "风团", "癣", "真菌", "疣", "疱疹", "银屑病",
-    "牛皮癣", "白癜风", "白斑", "黄褐斑", "色斑", "雀斑", "胎记", "痣", "黑素瘤",
-    "过敏", "接触性皮炎", "日光性皮炎", "晒伤", "脱发", "头皮屑", "毛囊炎", "疥疮",
-    "红斑", "丘疹", "水疱", "脓疱", "鳞屑", "脱皮", "皲裂", "溃烂", "破溃", "化脓",
-    "激素", "药膏", "外用药", "抗组胺", "维A酸", "保湿", "防晒", "护肤", "洗脸",
-    "忌口", "传染", "会好", "怎么办", "严重吗", "挂什么科", "看什么科",
+    "皮肤",
+    "皮损",
+    "皮疹",
+    "湿疹",
+    "瘙痒",
+    "痒",
+    "红疹",
+    "疙瘩",
+    "斑点",
+    "痘",
+    "痤疮",
+    "粉刺",
+    "痘印",
+    "荨麻疹",
+    "风团",
+    "癣",
+    "真菌",
+    "疣",
+    "疱疹",
+    "银屑病",
+    "牛皮癣",
+    "白癜风",
+    "白斑",
+    "黄褐斑",
+    "色斑",
+    "雀斑",
+    "胎记",
+    "痣",
+    "黑素瘤",
+    "过敏",
+    "接触性皮炎",
+    "日光性皮炎",
+    "晒伤",
+    "脱发",
+    "头皮屑",
+    "毛囊炎",
+    "疥疮",
+    "红斑",
+    "丘疹",
+    "水疱",
+    "脓疱",
+    "鳞屑",
+    "脱皮",
+    "皲裂",
+    "溃烂",
+    "破溃",
+    "化脓",
+    "激素",
+    "药膏",
+    "外用药",
+    "抗组胺",
+    "维A酸",
+    "保湿",
+    "防晒",
+    "护肤",
+    "洗脸",
+    "忌口",
+    "传染",
+    "会好",
+    "怎么办",
+    "严重吗",
+    "挂什么科",
+    "看什么科",
 )
 
 # 明显是寒暄/闲聊的短句
 _CHITCHAT_RE = re.compile(
     r"^\s*("
-    r"你好|您好|hi|hello|hey|哈喽|嗨|在吗|在不在|早上好|晚上好|下午好|"
-    r"谢谢|感谢|多谢|thanks|thank you|"
+    r"你好|您好|hi|hello|hey|哈喽|嗨|在吗|在么|在不在|早上好|晚上好|下午好|"
+    r"谢谢(?:你|您)?|感谢(?:你|您)?|多谢|thanks|thank you|"
     r"你是谁|你叫什么|介绍一下你|你能做什么|你会什么|怎么用"
-    r")[\s!！。.~～,，]*$",
+    r")[\s!！?？。.~～,，;；:：、…]*$",
     re.IGNORECASE,
 )
 
@@ -156,7 +212,9 @@ class AgentNodes:
                 )
             except (binascii.Error, ValueError, ImageValidationError) as exc:
                 logger.warning("图片预处理失败：{}", exc)
-                message = exc.message if isinstance(exc, ImageValidationError) else f"图片解码失败：{exc}"
+                message = (
+                    exc.message if isinstance(exc, ImageValidationError) else f"图片解码失败：{exc}"
+                )
                 update["errors"] = [*update["errors"], message]
                 update.update({"image_bytes": None, "image_meta": None})
 
@@ -201,9 +259,7 @@ class AgentNodes:
         # （「三天了」「不知道」），既不含皮肤关键词也匹配不上寒暄模板，
         # 若放任它落到 LLM 兜底或闲聊，追问进度就永远推进不到兜底作答，
         # 用户会卡在「一直被问、始终得不到回答」的状态。
-        elif any(keyword in question for keyword in SKIN_KEYWORDS) or state.get(
-            "clarify_pending"
-        ):
+        elif any(keyword in question for keyword in SKIN_KEYWORDS) or state.get("clarify_pending"):
             intent = Intent.KB_QA.value
         elif _CHITCHAT_RE.match(question):
             intent = Intent.CHITCHAT.value
@@ -251,7 +307,10 @@ class AgentNodes:
         errors = list(state.get("errors") or [])
 
         if not image:
-            return {"vision": None, "timings": _elapsed(state.get("timings") or {}, "vision_analyze", started)}
+            return {
+                "vision": None,
+                "timings": _elapsed(state.get("timings") or {}, "vision_analyze", started),
+            }
 
         try:
             diagnosis = await self.vision_service.analyze(
@@ -490,8 +549,7 @@ class AgentNodes:
             content = response.content
             if isinstance(content, list):  # content block 列表
                 content = "".join(
-                    part if isinstance(part, str) else str(part.get("text", ""))
-                    for part in content
+                    part if isinstance(part, str) else str(part.get("text", "")) for part in content
                 )
             answer = str(content).strip()
         except Exception as exc:  # noqa: BLE001 - 生成失败给可读的兜底话术

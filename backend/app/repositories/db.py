@@ -204,17 +204,13 @@ class MetadataStore:
     def list_documents(self) -> list[DocumentInfo]:
         """列出全部文档，按入库时间倒序。"""
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM documents ORDER BY created_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM documents ORDER BY created_at DESC").fetchall()
         return [DocumentInfo(**dict(row)) for row in rows]
 
     def get_document(self, doc_id: str) -> DocumentInfo | None:
         """按 doc_id 查询文档登记信息。"""
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM documents WHERE doc_id = ?", (doc_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM documents WHERE doc_id = ?", (doc_id,)).fetchone()
         return DocumentInfo(**dict(row)) if row else None
 
     def delete_document(self, doc_id: str) -> bool:
@@ -404,9 +400,7 @@ class MetadataStore:
     def get_user_by_username(self, username: str) -> dict[str, Any] | None:
         """按用户名查用户（登录入口）。"""
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM users WHERE username = ?", (username,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
         return dict(row) if row else None
 
     def list_users(self, keyword: str = "", limit: int = 200) -> list[dict[str, Any]]:
@@ -434,7 +428,15 @@ class MetadataStore:
         列名来自服务层白名单，不做拼接防注入处理之外的宽容——
         这里显式限定允许的列，避免把请求体字段直接拼进 SQL。
         """
-        allowed = {"display_name", "role", "status", "password_hash", "failed_attempts", "locked_until", "last_login_at"}
+        allowed = {
+            "display_name",
+            "role",
+            "status",
+            "password_hash",
+            "failed_attempts",
+            "locked_until",
+            "last_login_at",
+        }
         updates = {key: value for key, value in fields.items() if key in allowed}
         if not updates:
             return False
@@ -511,9 +513,7 @@ class MetadataStore:
     def delete_auth_session(self, token_hash: str) -> bool:
         """删除单条登录会话（登出）。"""
         with self._connect() as conn:
-            cursor = conn.execute(
-                "DELETE FROM auth_sessions WHERE token_hash = ?", (token_hash,)
-            )
+            cursor = conn.execute("DELETE FROM auth_sessions WHERE token_hash = ?", (token_hash,))
         return cursor.rowcount > 0
 
     def delete_user_auth_sessions(self, user_id: str) -> int:
@@ -581,4 +581,3 @@ class MetadataStore:
                     "SELECT * FROM audit_logs ORDER BY id DESC LIMIT ?", (limit,)
                 ).fetchall()
         return [dict(row) for row in rows]
-

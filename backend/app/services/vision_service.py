@@ -28,7 +28,7 @@ from app.core.errors import ImageValidationError, ModelOutputError, OllamaUnavai
 from app.core.parsing import inline_json_schema, parse_model
 from app.core.prompts import VISION_SYSTEM_PROMPT, build_vision_user_prompt
 from app.schemas.diagnosis import ImageMeta, VisionDiagnosis
-from app.services.ollama_client import OllamaClient
+from app.services.model_gateway import get_model_gateway
 
 # 低于该边长视为分辨率不足，会在 warnings 中提示用户重拍
 _MIN_USABLE_SIDE = 300
@@ -38,10 +38,9 @@ _BRIGHT_THRESHOLD = 215
 
 
 @lru_cache(maxsize=1)
-def get_ollama_client() -> OllamaClient:
-    """获取 Ollama 客户端单例（复用连接池）。"""
-    settings = get_settings()
-    return OllamaClient(settings.ollama_api, default_timeout=settings.llm_timeout)
+def get_ollama_client():
+    """兼容旧名：返回当前后端的模型网关（Ollama 或云端）。"""
+    return get_model_gateway()
 
 
 class VisionService:
@@ -54,7 +53,7 @@ class VisionService:
             settings: 全局配置。
         """
         self.settings = settings or get_settings()
-        self.client = get_ollama_client()
+        self.client = get_model_gateway()
 
     # ------------------------------------------------------------------
     # 图像预处理
@@ -128,9 +127,7 @@ class VisionService:
             resized = True
 
         buffer = io.BytesIO()
-        image.save(
-            buffer, format="JPEG", quality=self.settings.image_jpeg_quality, optimize=True
-        )
+        image.save(buffer, format="JPEG", quality=self.settings.image_jpeg_quality, optimize=True)
         processed = buffer.getvalue()
 
         meta = ImageMeta(
@@ -185,7 +182,7 @@ class VisionService:
         for index, (name, response_format) in enumerate(strategies):
             try:
                 content = await self.client.chat(
-                    self.settings.vision_model,
+                    self.settings.effective_vision_model,
                     messages,
                     images=[image],
                     response_format=response_format,
@@ -254,7 +251,12 @@ class VisionService:
             ModelOutputError: 模型输出无法解析为约定结构。
         """
         backend = self.settings.vision_backend
-        logger.info("开始视觉分析：model={} backend={}", self.settings.vision_model, backend)
+        logger.info(
+            "开始视觉分析：model={} backend={} llm={}",
+            self.settings.effective_vision_model,
+            backend,
+            self.settings.llm_backend,
+        )
 
         if backend == "langchain":
             raw = await self._analyze_via_langchain(image, user_text)
@@ -278,16 +280,22 @@ class VisionService:
         return diagnosis
 
     async def health(self) -> tuple[bool, bool]:
-        """检查 Ollama 连通性与视觉模型是否就绪。
+        """检查模型网关连通性与视觉模型是否就绪。
 
         Returns:
             ``(服务是否连通, 模型是否就绪)``
         """
         try:
+            if self.settings.llm_backend == "cloud":
+                if not self.settings.resolved_cloud_api_key:
+                    return False, False
+                # 有 Key 即视为网关可用；模型名是否有效留给真实调用暴露
+                return True, True
+
             connected = bool(await self.client.list_models())
             if not connected:
                 return False, False
-            return True, await self.client.has_model(self.settings.vision_model)
+            return True, await self.client.has_model(self.settings.effective_vision_model)
         except OllamaUnavailableError:
             return False, False
 

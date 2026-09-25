@@ -80,9 +80,7 @@ def _load_history(store: MetadataStore, session_id: str, settings: Settings) -> 
         if row.get("role") == "user":
             # 历史里的图片不重放（体积大且无必要），用占位符保留语义
             text = (
-                f"[用户上传了一张皮肤照片] {content}".strip()
-                if row.get("has_image")
-                else content
+                f"[用户上传了一张皮肤照片] {content}".strip() if row.get("has_image") else content
             )
             messages.append(HumanMessage(content=text))
         else:
@@ -156,9 +154,7 @@ async def agent_chat(
     )
 
     if payload.message.strip():
-        store.add_message(
-            session_id, "user", payload.message, has_image=bool(payload.image_base64)
-        )
+        store.add_message(session_id, "user", payload.message, has_image=bool(payload.image_base64))
     elif payload.image_base64:
         store.add_message(session_id, "user", "[上传了一张皮肤照片]", has_image=True)
 
@@ -258,9 +254,7 @@ async def diagnose_image(
     from app.core.errors import ImageValidationError
 
     if not file.content_type or not file.content_type.startswith("image/"):
-        raise ImageValidationError(
-            f"仅支持图片文件，当前类型为 {file.content_type or '未知'}"
-        )
+        raise ImageValidationError(f"仅支持图片文件，当前类型为 {file.content_type or '未知'}")
 
     raw = await file.read()
     session_id = session_id or _new_session_id()

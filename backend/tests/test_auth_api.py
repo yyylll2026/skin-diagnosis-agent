@@ -157,9 +157,7 @@ def test_wrong_password_returns_401(auth_client: TestClient) -> None:
     _register(auth_client, "dave")
     auth_client.post(f"{API}/auth/logout")
 
-    bad = auth_client.post(
-        f"{API}/auth/login", json={"username": "dave", "password": "wrongpass1"}
-    )
+    bad = auth_client.post(f"{API}/auth/login", json={"username": "dave", "password": "wrongpass1"})
     unknown = auth_client.post(
         f"{API}/auth/login", json={"username": "ghost", "password": "wrongpass1"}
     )
@@ -253,8 +251,7 @@ def test_customer_can_read_knowledge_base(auth_client: TestClient) -> None:
     _register(auth_client, "reader")
     assert auth_client.get(f"{API}/kb/documents").status_code == 200
     assert (
-        auth_client.post(f"{API}/kb/search", json={"query": "湿疹", "top_k": 3}).status_code
-        == 200
+        auth_client.post(f"{API}/kb/search", json={"query": "湿疹", "top_k": 3}).status_code == 200
     )
 
 
@@ -266,9 +263,7 @@ def test_customer_can_read_knowledge_base(auth_client: TestClient) -> None:
 def test_admin_can_manage_users(auth_client: TestClient) -> None:
     """管理员可以创建用户、改角色、禁用。"""
     _create_admin(auth_client)
-    auth_client.post(
-        f"{API}/auth/login", json={"username": "root", "password": "adminpass1"}
-    )
+    auth_client.post(f"{API}/auth/login", json={"username": "root", "password": "adminpass1"})
 
     created = auth_client.post(
         f"{API}/users",
@@ -292,9 +287,7 @@ def test_admin_can_read_audit_logs(auth_client: TestClient) -> None:
     """管理员可以查看审计日志，且登录失败也留痕。"""
     _create_admin(auth_client)
     auth_client.post(f"{API}/auth/login", json={"username": "root", "password": "badpass1"})
-    auth_client.post(
-        f"{API}/auth/login", json={"username": "root", "password": "adminpass1"}
-    )
+    auth_client.post(f"{API}/auth/login", json={"username": "root", "password": "adminpass1"})
 
     response = auth_client.get(f"{API}/audit/logs?limit=50")
     assert response.status_code == 200
@@ -313,9 +306,7 @@ def test_reset_password_endpoint_revokes_target_sessions(auth_client: TestClient
 
     # 换管理员身份来执行重置
     auth_client.post(f"{API}/auth/logout")
-    auth_client.post(
-        f"{API}/auth/login", json={"username": "root", "password": "adminpass1"}
-    )
+    auth_client.post(f"{API}/auth/login", json={"username": "root", "password": "adminpass1"})
 
     response = auth_client.post(
         f"{API}/users/{victim_id}/password", json={"new_password": "resetpass99"}
@@ -379,9 +370,7 @@ def test_admin_sees_all_sessions(auth_client: TestClient) -> None:
     get_metadata_store().ensure_session("s-someone", title="某人的", user_id=other.user_id)
 
     _create_admin(auth_client)
-    auth_client.post(
-        f"{API}/auth/login", json={"username": "root", "password": "adminpass1"}
-    )
+    auth_client.post(f"{API}/auth/login", json={"username": "root", "password": "adminpass1"})
     response = auth_client.get(f"{API}/sessions")
     assert response.status_code == 200
     assert any(item["session_id"] == "s-someone" for item in response.json())

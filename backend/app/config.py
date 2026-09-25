@@ -42,8 +42,19 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
     )
 
+    # ---------------- 模型后端 ----------------
+    #   ollama -> 本机/容器内 Ollama（数据不出机器，需 ≥4GB 内存跑视觉模型）
+    #   cloud  -> OpenAI 兼容云端 API（如阿里云百炼）；小内存免费 PaaS 用这个
+    llm_backend: Literal["ollama", "cloud"] = "ollama"
+    # 云端 OpenAI 兼容基址（默认阿里云百炼 compatible-mode）
+    cloud_api_base: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    # 同时兼容 DASHSCOPE_API_KEY 环境变量（百炼控制台常用名）
+    cloud_api_key: str = ""
+
     # ---------------- Ollama ----------------
     ollama_base_url: str = "http://127.0.0.1:11434"
+    # 本地默认仍是 7b；SKIN_LLM_BACKEND=cloud 时由 effective_* 换成云端模型名，
+    # 避免用户忘改模型名时把 `qwen2.5vl:7b` 发给 DashScope 导致 400。
     vision_model: str = "qwen2.5vl:7b"
     text_model: str = "qwen2.5vl:7b"
     fast_model: str = "qwen2.5vl:3b"
@@ -59,9 +70,11 @@ class Settings(BaseSettings):
     keep_alive: str = "30m"
 
     # ---------------- Embedding ----------------
-    embedding_backend: Literal["ollama", "hf", "chroma_default"] = "ollama"
+    #   cloud -> 走同一套 OpenAI 兼容 /embeddings（百炼 text-embedding-v3）
+    embedding_backend: Literal["ollama", "hf", "chroma_default", "cloud"] = "ollama"
     embedding_model: str = "bge-m3"
     embedding_hf_model: str = "BAAI/bge-small-zh-v1.5"
+    cloud_embedding_model: str = "text-embedding-v3"
 
     # ---------------- 向量库 ----------------
     chroma_collection: str = "skin_kb"
@@ -149,6 +162,13 @@ class Settings(BaseSettings):
             return [item.strip() for item in v.split(",") if item.strip()]
         return v
 
+    @field_validator("cloud_api_key", mode="before")
+    @classmethod
+    def _strip_cloud_key(cls, v: object) -> object:
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
     @field_validator(
         "chroma_dir",
         "sqlite_path",
@@ -222,6 +242,55 @@ class Settings(BaseSettings):
     def ollama_api(self) -> str:
         """Ollama 原生 REST 接口基址（不带 /v1）。"""
         return self.ollama_base_url.rstrip("/")
+
+    @property
+    def resolved_cloud_api_base(self) -> str:
+        """云端 OpenAI 兼容基址（去掉尾部 /）。"""
+        return self.cloud_api_base.rstrip("/")
+
+    @property
+    def resolved_cloud_api_key(self) -> str:
+        """云端 API Key：显式配置优先，其次读 DASHSCOPE_API_KEY。"""
+        import os
+
+        key = (self.cloud_api_key or "").strip()
+        if key:
+            return key
+        return (os.environ.get("DASHSCOPE_API_KEY") or "").strip()
+
+    @property
+    def effective_vision_model(self) -> str:
+        """当前后端实际使用的视觉模型名。"""
+        if self.llm_backend != "cloud":
+            return self.vision_model
+        if self.vision_model.startswith("qwen2.5vl") or self.vision_model.startswith("qwen3-vl"):
+            return "qwen-vl-plus"
+        return self.vision_model
+
+    @property
+    def effective_text_model(self) -> str:
+        """当前后端实际使用的文本模型名。"""
+        if self.llm_backend != "cloud":
+            return self.text_model
+        if self.text_model.startswith("qwen2.5vl") or ":" in self.text_model:
+            return "qwen-plus"
+        return self.text_model
+
+    @property
+    def effective_fast_model(self) -> str:
+        """当前后端实际使用的轻量模型名。"""
+        if self.llm_backend != "cloud":
+            return self.fast_model
+        if self.fast_model.startswith("qwen2.5vl") or ":" in self.fast_model:
+            return "qwen-turbo"
+        return self.fast_model
+
+    @property
+    def effective_embedding_model(self) -> str:
+        """当前后端实际使用的向量模型名。"""
+        if self.embedding_backend == "cloud":
+            return self.cloud_embedding_model
+        return self.embedding_model
 
 
 @lru_cache(maxsize=1)

@@ -41,8 +41,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     logger.info("=" * 68)
     logger.info("{} 启动中……", settings.app_name)
-    logger.info("Ollama: {}｜视觉模型: {}", settings.ollama_api, settings.vision_model)
-    logger.info("Embedding: {} / {}", settings.embedding_backend, settings.embedding_model)
+    if settings.llm_backend == "cloud":
+        logger.info(
+            "模型后端=cloud｜{}｜视觉: {}",
+            settings.resolved_cloud_api_base,
+            settings.effective_vision_model,
+        )
+    else:
+        logger.info("Ollama: {}｜视觉模型: {}", settings.ollama_api, settings.vision_model)
+    logger.info(
+        "Embedding: {} / {}", settings.embedding_backend, settings.effective_embedding_model
+    )
     logger.info("向量库: {}（集合 {}）", settings.resolved_chroma_dir, settings.chroma_collection)
 
     try:

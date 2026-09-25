@@ -141,9 +141,7 @@ class OllamaClient:
 
         if resp.status_code >= 400:
             # 400 常见于模型不支持 format 约束 —— 交由上层降级重试
-            raise ModelOutputError(
-                f"Ollama 返回 {resp.status_code}", detail=resp.text[:500]
-            )
+            raise ModelOutputError(f"Ollama 返回 {resp.status_code}", detail=resp.text[:500])
 
         data = resp.json()
         return (data.get("message") or {}).get("content", "")
@@ -174,9 +172,7 @@ class OllamaClient:
             ) as resp:
                 if resp.status_code >= 400:
                     body = (await resp.aread()).decode("utf-8", "ignore")
-                    raise ModelOutputError(
-                        f"Ollama 流式返回 {resp.status_code}", detail=body[:500]
-                    )
+                    raise ModelOutputError(f"Ollama 流式返回 {resp.status_code}", detail=body[:500])
                 async for line in resp.aiter_lines():
                     if not line.strip():
                         continue

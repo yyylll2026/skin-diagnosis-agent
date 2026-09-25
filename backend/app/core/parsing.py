@@ -191,4 +191,3 @@ def inline_json_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
     resolved = resolve(schema)
     return resolved if isinstance(resolved, dict) else schema
-

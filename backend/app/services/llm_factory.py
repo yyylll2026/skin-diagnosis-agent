@@ -19,7 +19,7 @@ from langchain_ollama import ChatOllama, OllamaEmbeddings
 from loguru import logger
 
 from app.config import Settings, get_settings
-from app.core.errors import EmbeddingError
+from app.core.errors import EmbeddingError, OllamaUnavailableError
 
 # ---------------------------------------------------------------------------
 # 文本生成模型
@@ -27,8 +27,8 @@ from app.core.errors import EmbeddingError
 
 
 @lru_cache(maxsize=8)
-def build_chat_model(model: str, temperature: float, num_predict: int) -> ChatOllama:
-    """构造一个 ChatOllama 实例（带缓存，相同参数复用同一实例）。
+def build_chat_model(model: str, temperature: float, num_predict: int) -> Any:
+    """构造聊天模型实例（带缓存，相同参数复用同一实例）。
 
     Args:
         model: 模型名。
@@ -36,9 +36,29 @@ def build_chat_model(model: str, temperature: float, num_predict: int) -> ChatOl
         num_predict: 单次最大生成 token 数。
 
     Returns:
-        配置好的 ChatOllama。
+        ChatOllama 或云端 ChatOpenAI（BaseChatModel 兼容）。
     """
     settings: Settings = get_settings()
+
+    if settings.llm_backend == "cloud":
+        from langchain_openai import ChatOpenAI
+
+        api_key = settings.resolved_cloud_api_key
+        if not api_key:
+            raise OllamaUnavailableError(
+                "云端模型未配置 API Key",
+                "请设置 SKIN_CLOUD_API_KEY 或 DASHSCOPE_API_KEY",
+            )
+        return ChatOpenAI(
+            model=model,
+            api_key=api_key,
+            base_url=settings.resolved_cloud_api_base,
+            temperature=temperature,
+            max_tokens=num_predict,
+            timeout=settings.llm_timeout,
+            max_retries=2,
+        )
+
     return ChatOllama(
         model=model,
         base_url=settings.ollama_api,
@@ -51,26 +71,26 @@ def build_chat_model(model: str, temperature: float, num_predict: int) -> ChatOl
     )
 
 
-def get_text_llm(temperature: float = 0.2) -> ChatOllama:
+def get_text_llm(temperature: float = 0.2) -> Any:
     """主力文本模型：用于知识问答与图文融合生成。"""
     settings = get_settings()
-    return build_chat_model(settings.text_model, temperature, settings.num_predict)
+    return build_chat_model(settings.effective_text_model, temperature, settings.num_predict)
 
 
-def get_fast_llm(temperature: float = 0.0) -> ChatOllama:
+def get_fast_llm(temperature: float = 0.0) -> Any:
     """轻量模型：用于意图分类、查询重写、重排等短任务，追求低延迟。"""
     settings = get_settings()
-    return build_chat_model(settings.fast_model, temperature, 512)
+    return build_chat_model(settings.effective_fast_model, temperature, 512)
 
 
-def get_vision_llm(temperature: float = 0.1) -> ChatOllama:
+def get_vision_llm(temperature: float = 0.1) -> Any:
     """多模态模型（LangChain 路径）。
 
     仅在 ``SKIN_VISION_BACKEND=langchain`` 时使用；默认走 REST 路径，
     因为 REST 可以传 ``format`` 做 JSON Schema 语法约束。
     """
     settings = get_settings()
-    return build_chat_model(settings.vision_model, temperature, settings.num_predict)
+    return build_chat_model(settings.effective_vision_model, temperature, settings.num_predict)
 
 
 # ---------------------------------------------------------------------------
@@ -91,9 +111,59 @@ class _ChromaEFAdapter(Embeddings):
         return self.embed_documents([text])[0]
 
 
+class _CloudEmbeddings(Embeddings):
+    """同步包装的云端向量化（Chroma/LangChain 检索侧多为同步调用）。"""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    def _embed(self, texts: list[str]) -> list[list[float]]:
+        import httpx
+
+        key = self._settings.resolved_cloud_api_key
+        if not key:
+            raise EmbeddingError(
+                "云端向量化未配置 API Key",
+                "请设置 SKIN_CLOUD_API_KEY 或 DASHSCOPE_API_KEY，"
+                "或改用 SKIN_EMBEDDING_BACKEND=chroma_default",
+            )
+        base = self._settings.resolved_cloud_api_base
+        model = self._settings.effective_embedding_model
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post(
+                f"{base}/embeddings",
+                headers={"Authorization": f"Bearer {key}"},
+                json={"model": model, "input": texts},
+            )
+            if resp.status_code >= 400:
+                raise EmbeddingError(
+                    f"云端向量化失败（HTTP {resp.status_code}）",
+                    resp.text[:400],
+                )
+            items = resp.json().get("data") or []
+            items = sorted(items, key=lambda x: int(x.get("index", 0)))
+            vectors = [[float(x) for x in item.get("embedding", [])] for item in items]
+            if len(vectors) != len(texts):
+                raise EmbeddingError(
+                    "云端向量化返回数量与输入不一致",
+                    f"expected={len(texts)} got={len(vectors)}",
+                )
+            return vectors
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return self._embed(texts)
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._embed([text])[0]
+
+
 def _build_embeddings(settings: Settings) -> Embeddings:
     """按配置构造 embedding 后端。"""
     backend = settings.embedding_backend
+
+    if backend == "cloud":
+        logger.info("Embedding 后端 = Cloud / {}", settings.effective_embedding_model)
+        return _CloudEmbeddings(settings)
 
     if backend == "ollama":
         logger.info("Embedding 后端 = Ollama / {}", settings.embedding_model)
@@ -114,8 +184,7 @@ def _build_embeddings(settings: Settings) -> Embeddings:
             )
         except Exception as exc:  # noqa: BLE001
             raise EmbeddingError(
-                "加载本地 sentence-transformers 模型失败，请先安装可选依赖："
-                'pip install -e ".[hf]"',
+                '加载本地 sentence-transformers 模型失败，请先安装可选依赖：pip install -e ".[hf]"',
                 str(exc),
             ) from exc
         return _ChromaEFAdapter(fn)

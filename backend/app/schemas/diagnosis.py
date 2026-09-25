@@ -20,10 +20,26 @@ from app.schemas.knowledge import RetrievedChunk
 # 模型经常无视枚举约束，直接吐中文或大写枚举名。这里做一次归一化，
 # 让「结构性小瑕疵」不至于让整次诊断报废。
 _RISK_ALIASES: dict[str, str] = {
-    "low": "low", "低": "low", "低风险": "low", "轻微": "low", "无需处理": "low",
-    "medium": "medium", "中": "medium", "中等": "medium", "中度": "medium", "一般": "medium",
-    "high": "high", "高": "high", "较高": "high", "高风险": "high", "严重": "high",
-    "urgent": "urgent", "紧急": "urgent", "危急": "urgent", "急诊": "urgent", "立即就医": "urgent",
+    "low": "low",
+    "低": "low",
+    "低风险": "low",
+    "轻微": "low",
+    "无需处理": "low",
+    "medium": "medium",
+    "中": "medium",
+    "中等": "medium",
+    "中度": "medium",
+    "一般": "medium",
+    "high": "high",
+    "高": "high",
+    "较高": "high",
+    "高风险": "high",
+    "严重": "high",
+    "urgent": "urgent",
+    "紧急": "urgent",
+    "危急": "urgent",
+    "急诊": "urgent",
+    "立即就医": "urgent",
 }
 
 
@@ -49,7 +65,6 @@ class RiskLevel(StrEnum):
             return value
         key = str(value or "").strip().lower()
         return cls(_RISK_ALIASES.get(key, "medium"))
-
 
 
 class LesionObservation(BaseModel):
@@ -135,9 +150,7 @@ class VisionDiagnosis(BaseModel):
         """
         if isinstance(v, str):
             return [
-                {"name": item.strip()}
-                for item in v.replace("，", "、").split("、")
-                if item.strip()
+                {"name": item.strip()} for item in v.replace("，", "、").split("、") if item.strip()
             ]
         if isinstance(v, dict):
             return [v]

@@ -81,7 +81,9 @@ def test_clarify_pending_keeps_consultation_alive() -> None:
     若被当成闲聊或交给 LLM 兜底，追问进度就永远无法推进。
     """
     nodes = _route_nodes()
-    assert nodes.route({"question": "不知道", "clarify_pending": True})["intent"] == Intent.KB_QA.value
+    assert (
+        nodes.route({"question": "不知道", "clarify_pending": True})["intent"] == Intent.KB_QA.value
+    )
     # 没有待补追问时，「不知道」会走 LLM 兜底（此处无模型，回落到 kb_qa）
     routing = nodes.route({"question": "不知道"})["intent"]
     assert routing in {Intent.KB_QA.value, Intent.CHITCHAT.value}
@@ -131,7 +133,9 @@ def test_preprocess_records_error_for_invalid_base64() -> None:
     """base64 解不出图片时，记录错误而不是抛异常中断整图。"""
     nodes = _route_nodes()
     nodes.vision_service = type(
-        "Stub", (), {"prepare_image": lambda self, *a, **k: (_ for _ in ()).throw(ValueError("bad"))}
+        "Stub",
+        (),
+        {"prepare_image": lambda self, *a, **k: (_ for _ in ()).throw(ValueError("bad"))},
     )()
     result = nodes.preprocess({"question": "看看", "image_bytes": "not-base64!!"})
     assert result["image_bytes"] is None

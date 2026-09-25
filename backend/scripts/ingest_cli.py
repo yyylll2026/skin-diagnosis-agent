@@ -49,7 +49,9 @@ def _store() -> MetadataStore:
 def ingest(
     path: Annotated[Path, typer.Argument(help="文件或目录路径")],
     category: Annotated[str, typer.Option("--category", "-c", help="文档分类")] = "其他",
-    recursive: Annotated[bool, typer.Option("--recursive/--no-recursive", help="是否递归子目录")] = True,
+    recursive: Annotated[
+        bool, typer.Option("--recursive/--no-recursive", help="是否递归子目录")
+    ] = True,
 ) -> None:
     """导入单个文件或整个目录到知识库。"""
     setup_logging(debug=False)
@@ -141,7 +143,9 @@ def search(
 
 @app.command("reindex")
 def reindex(
-    docs_dir: Annotated[Path | None, typer.Option("--docs", help="语料目录，默认 data/docs")] = None,
+    docs_dir: Annotated[
+        Path | None, typer.Option("--docs", help="语料目录，默认 data/docs")
+    ] = None,
     category: Annotated[str, typer.Option("--category", "-c")] = "其他",
 ) -> None:
     """清空向量库并从语料目录全量重建（更换 embedding 模型后必须执行）。"""
@@ -155,8 +159,10 @@ def reindex(
 
     async def run() -> None:
         results = await service.ingest_directory(target, category=category)
-        console.print(f"[green]重建完成：{len(results)} 份文档，"
-                      f"{sum(item.chunk_count for item in results)} 个向量块[/green]")
+        console.print(
+            f"[green]重建完成：{len(results)} 份文档，"
+            f"{sum(item.chunk_count for item in results)} 个向量块[/green]"
+        )
 
     asyncio.run(run())
 
@@ -192,8 +198,7 @@ def health() -> None:
 
     document_count = len(_store().list_documents())
     console.print(
-        f"知识库: [cyan]{vector_store.count_chunks()}[/cyan] 个向量块"
-        f"，{document_count} 份文档"
+        f"知识库: [cyan]{vector_store.count_chunks()}[/cyan] 个向量块，{document_count} 份文档"
     )
 
 

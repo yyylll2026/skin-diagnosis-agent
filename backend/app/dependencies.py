@@ -172,12 +172,11 @@ def get_runner_dep() -> AgentRunner:  # noqa: F821
 
 
 @lru_cache(maxsize=1)
-def get_ollama_client_dep() -> OllamaClient:  # noqa: F821
-    """Ollama 客户端单例。"""
-    from app.services.ollama_client import OllamaClient
+def get_ollama_client_dep():  # noqa: F821
+    """模型网关单例（Ollama 或云端）；函数名保留以兼容既有导入。"""
+    from app.services.model_gateway import get_model_gateway
 
-    settings = get_settings()
-    return OllamaClient(settings.ollama_api, default_timeout=settings.llm_timeout)
+    return get_model_gateway()
 
 
 def warmup() -> None:

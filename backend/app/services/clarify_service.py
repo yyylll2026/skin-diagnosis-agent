@@ -129,40 +129,171 @@ _DURATION_RE = re.compile(
 # 部位：只保留有鉴别价值的身体部位词。
 # 刻意排除「皮肤」「身上」这类过于宽泛的词——「我皮肤痒」等于没说部位。
 _LOCATIONS: tuple[str, ...] = (
-    "脸", "面部", "面颊", "脸颊", "额头", "下巴", "口周", "嘴唇", "嘴角", "眼睑", "眼睛",
-    "鼻子", "耳朵", "头皮", "脖子", "颈部", "后颈", "锁骨",
-    "胸口", "胸前", "后背", "背部", "腰", "腹部", "肚子", "躯干",
-    "上臂", "前臂", "手臂", "胳膊", "手背", "手心", "手掌", "手指", "手腕", "肘",
-    "大腿", "小腿", "膝盖", "腿", "脚背", "脚底", "脚趾", "脚踝", "脚",
-    "腋下", "腹股沟", "会阴", "外阴", "臀部", "指甲", "甲周", "黏膜", "口腔",
-    "全身", "四肢",
+    "脸",
+    "面部",
+    "面颊",
+    "脸颊",
+    "额头",
+    "下巴",
+    "口周",
+    "嘴唇",
+    "嘴角",
+    "眼睑",
+    "眼睛",
+    "鼻子",
+    "耳朵",
+    "头皮",
+    "脖子",
+    "颈部",
+    "后颈",
+    "锁骨",
+    "胸口",
+    "胸前",
+    "后背",
+    "背部",
+    "腰",
+    "腹部",
+    "肚子",
+    "躯干",
+    "上臂",
+    "前臂",
+    "手臂",
+    "胳膊",
+    "手背",
+    "手心",
+    "手掌",
+    "手指",
+    "手腕",
+    "肘",
+    "大腿",
+    "小腿",
+    "膝盖",
+    "腿",
+    "脚背",
+    "脚底",
+    "脚趾",
+    "脚踝",
+    "脚",
+    "腋下",
+    "腹股沟",
+    "会阴",
+    "外阴",
+    "臀部",
+    "指甲",
+    "甲周",
+    "黏膜",
+    "口腔",
+    "全身",
+    "四肢",
 )
 
 _SENSATIONS: tuple[str, ...] = (
-    "痒", "瘙痒", "发痒", "不痒", "不痛不痒", "疼", "痛", "刺痛", "疼痛", "压痛",
-    "灼热", "烧灼", "麻木", "无感觉", "没感觉", "没有感觉",
+    "痒",
+    "瘙痒",
+    "发痒",
+    "不痒",
+    "不痛不痒",
+    "疼",
+    "痛",
+    "刺痛",
+    "疼痛",
+    "压痛",
+    "灼热",
+    "烧灼",
+    "麻木",
+    "无感觉",
+    "没感觉",
+    "没有感觉",
 )
 
 _PROGRESSIONS: tuple[str, ...] = (
-    "扩大", "扩散", "蔓延", "变大", "增多", "变多", "增加", "加重", "更严重", "变严重",
-    "好转", "消退", "减轻", "没变化", "没有变化", "没扩大", "稳定", "反复", "持续",
-    "一直", "新发", "又长", "又起", "转移",
+    "扩大",
+    "扩散",
+    "蔓延",
+    "变大",
+    "增多",
+    "变多",
+    "增加",
+    "加重",
+    "更严重",
+    "变严重",
+    "好转",
+    "消退",
+    "减轻",
+    "没变化",
+    "没有变化",
+    "没扩大",
+    "稳定",
+    "反复",
+    "持续",
+    "一直",
+    "新发",
+    "又长",
+    "又起",
+    "转移",
 )
 
 _TRIGGERS: tuple[str, ...] = (
-    "换了", "新换", "化妆品", "护肤品", "防晒霜", "洗面奶", "面膜", "吃了", "海鲜",
-    "辛辣", "喝酒", "晒太阳", "暴晒", "日晒", "药物", "吃药", "新衣服", "出汗",
-    "接触", "宠物", "花粉", "烫发", "染发", "被虫", "蚊虫",
+    "换了",
+    "新换",
+    "化妆品",
+    "护肤品",
+    "防晒霜",
+    "洗面奶",
+    "面膜",
+    "吃了",
+    "海鲜",
+    "辛辣",
+    "喝酒",
+    "晒太阳",
+    "暴晒",
+    "日晒",
+    "药物",
+    "吃药",
+    "新衣服",
+    "出汗",
+    "接触",
+    "宠物",
+    "花粉",
+    "烫发",
+    "染发",
+    "被虫",
+    "蚊虫",
 )
 
 _HISTORY: tuple[str, ...] = (
-    "以前", "既往", "小时候", "有过", "曾经", "过敏史", "过敏体质", "家族", "遗传",
-    "老毛病", "复发", "又犯了", "第二次",
+    "以前",
+    "既往",
+    "小时候",
+    "有过",
+    "曾经",
+    "过敏史",
+    "过敏体质",
+    "家族",
+    "遗传",
+    "老毛病",
+    "复发",
+    "又犯了",
+    "第二次",
 )
 
 _TREATMENTS: tuple[str, ...] = (
-    "用过", "涂了", "抹了", "擦了", "敷了", "吃了", "药膏", "激素", "抗过敏",
-    "抗组胺", "去医院", "看过医生", "没管", "没处理", "自己买", "自行用药",
+    "用过",
+    "涂了",
+    "抹了",
+    "擦了",
+    "敷了",
+    "吃了",
+    "药膏",
+    "激素",
+    "抗过敏",
+    "抗组胺",
+    "去医院",
+    "看过医生",
+    "没管",
+    "没处理",
+    "自己买",
+    "自行用药",
 )
 
 _EXTRACT_RULES: dict[str, tuple[Any, ...]] = {
@@ -177,16 +308,50 @@ _EXTRACT_RULES: dict[str, tuple[Any, ...]] = {
 
 # 个人咨询的标志：患者自述（含家属代述）才会追问
 _PERSONAL_MARKERS: tuple[str, ...] = (
-    "我", "本人", "自己", "孩子", "小孩", "宝宝", "儿子", "女儿", "老婆", "老公",
-    "家人", "妈妈", "爸爸", "母亲", "父亲", "老人", "娃",
+    "我",
+    "本人",
+    "自己",
+    "孩子",
+    "小孩",
+    "宝宝",
+    "儿子",
+    "女儿",
+    "老婆",
+    "老公",
+    "家人",
+    "妈妈",
+    "爸爸",
+    "母亲",
+    "父亲",
+    "老人",
+    "娃",
 )
 
 # 症状描述词：只有出现这些具体词（或抽到了维度）才认为在「描述病情」。
 # 刻意不含「一直」「又」「有点」「变」这类弱词——它们太常出现在非病情语境里，
 # 例如「我一直想问你，湿疹会遗传吗」会被误判成症状描述。
 _SYMPTOM_VERBS: tuple[str, ...] = (
-    "长", "起", "出现", "肿", "破", "脱皮", "掉皮", "流水", "结痂", "溃", "烂",
-    "痒", "痛", "疼", "红", "斑", "疹", "痘", "疙瘩", "水疱", "脓",
+    "长",
+    "起",
+    "出现",
+    "肿",
+    "破",
+    "脱皮",
+    "掉皮",
+    "流水",
+    "结痂",
+    "溃",
+    "烂",
+    "痒",
+    "痛",
+    "疼",
+    "红",
+    "斑",
+    "疹",
+    "痘",
+    "疙瘩",
+    "水疱",
+    "脓",
 )
 
 # 泛泛的知识提问句式：即使没有症状动词，也不该追问
@@ -228,7 +393,9 @@ class ClarifyDecision:
         """转成对外契约（供 SSE 事件与接口响应用）。"""
         return {
             "needs_clarification": self.needs_clarification,
-            "missing": [DIMENSION_META[key]["label"] for key in self.missing if key in DIMENSION_META],
+            "missing": [
+                DIMENSION_META[key]["label"] for key in self.missing if key in DIMENSION_META
+            ],
             "missing_keys": list(self.missing),
             "collected": {
                 DIMENSION_META[key]["label"]: value
@@ -245,7 +412,9 @@ class ClarifyDecision:
 class ClarifyService:
     """完备性判断 + 追问文案 + 多轮状态管理。"""
 
-    def __init__(self, settings: Settings | None = None, store: MetadataStore | None = None) -> None:
+    def __init__(
+        self, settings: Settings | None = None, store: MetadataStore | None = None
+    ) -> None:
         """初始化。
 
         Args:
@@ -399,8 +568,11 @@ class ClarifyService:
             self.clear(session_id)
             logger.info("完备性判断：用户要求直接回答，转入兜底作答")
             return ClarifyDecision(
-                missing=missing_core, collected=collected, facts_text=facts_text,
-                fallback=bool(missing_core), bypassed_reason="user_skip",
+                missing=missing_core,
+                collected=collected,
+                facts_text=facts_text,
+                fallback=bool(missing_core),
+                bypassed_reason="user_skip",
                 max_rounds=self.settings.clarify_max_rounds,
             )
 
@@ -425,12 +597,18 @@ class ClarifyService:
             self.clear(session_id)
             logger.info(
                 "完备性判断：追问轮次已用尽（{}/{}），转入兜底作答，缺失 {}",
-                rounds_used, self.settings.clarify_max_rounds, missing_core,
+                rounds_used,
+                self.settings.clarify_max_rounds,
+                missing_core,
             )
             return ClarifyDecision(
-                missing=missing_core, collected=collected, facts_text=facts_text,
-                round=rounds_used, max_rounds=self.settings.clarify_max_rounds,
-                fallback=True, bypassed_reason="round_limit",
+                missing=missing_core,
+                collected=collected,
+                facts_text=facts_text,
+                round=rounds_used,
+                max_rounds=self.settings.clarify_max_rounds,
+                fallback=True,
+                bypassed_reason="round_limit",
             )
 
         # ---- 默认：追问 ----
@@ -438,11 +616,17 @@ class ClarifyService:
         self.save(session_id, collected, missing_core, rounds_used)
         logger.info(
             "完备性判断：信息不足（{}/{}），发起第 {} 轮追问，缺失 {}",
-            filled_core, len(CORE_DIMENSIONS), rounds_used, missing_core,
+            filled_core,
+            len(CORE_DIMENSIONS),
+            rounds_used,
+            missing_core,
         )
         return ClarifyDecision(
-            needs_clarification=True, missing=missing_core, collected=collected,
-            round=rounds_used, max_rounds=self.settings.clarify_max_rounds,
+            needs_clarification=True,
+            missing=missing_core,
+            collected=collected,
+            round=rounds_used,
+            max_rounds=self.settings.clarify_max_rounds,
             facts_text=facts_text,
         )
 

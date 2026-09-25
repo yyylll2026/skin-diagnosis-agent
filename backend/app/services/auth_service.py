@@ -96,7 +96,9 @@ _DUMMY_HASH = b"$2b$12$C6UzMDM.H6dfI/f/IKcEe.6EOxDdPqFmRREvL5OZ0dCICVE7wXk2O"
 class AuthService:
     """鉴权与用户管理。"""
 
-    def __init__(self, settings: Settings | None = None, store: MetadataStore | None = None) -> None:
+    def __init__(
+        self, settings: Settings | None = None, store: MetadataStore | None = None
+    ) -> None:
         """初始化。
 
         Args:
@@ -528,9 +530,7 @@ class AuthService:
             if (becoming_non_admin or becoming_disabled) and (
                 self.store.count_active_admins(exclude_user_id=user_id) == 0
             ):
-                raise PermissionDeniedError(
-                    "系统中必须保留至少一个启用状态的管理员，操作已拒绝"
-                )
+                raise PermissionDeniedError("系统中必须保留至少一个启用状态的管理员，操作已拒绝")
 
         fields: dict[str, Any] = {}
         if display_name is not None:
@@ -648,7 +648,9 @@ class AuthService:
             raise AppError("用户不存在")
 
         if not self.verify_password(old_password, str(row.get("password_hash") or "")):
-            self.audit("password_change", actor=user.username, result="bad_old", client_ip=client_ip)
+            self.audit(
+                "password_change", actor=user.username, result="bad_old", client_ip=client_ip
+            )
             raise CredentialsError("原密码不正确")
 
         self.store.update_user(
@@ -731,7 +733,12 @@ class AuthService:
             unlock_at = datetime.now() + timedelta(minutes=self.settings.auth_lockout_minutes)
             fields["locked_until"] = unlock_at.isoformat(timespec="seconds")
             fields["failed_attempts"] = 0  # 锁定期满后从零开始，避免一错即锁
-            logger.warning("账号 {} 连续失败 {} 次，锁定至 {}", row.get("username"), attempts, fields["locked_until"])
+            logger.warning(
+                "账号 {} 连续失败 {} 次，锁定至 {}",
+                row.get("username"),
+                attempts,
+                fields["locked_until"],
+            )
         self.store.update_user(str(row["user_id"]), fields)
 
     @staticmethod

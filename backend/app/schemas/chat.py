@@ -108,6 +108,8 @@ class HealthResponse(BaseModel):
     """健康检查响应。前端左侧栏底部的状态灯用这个。"""
 
     status: str = "ok"
+    # ollama | cloud。前端仍读 ollama_connected 表示「模型网关是否可达」。
+    llm_backend: str = "ollama"
     ollama_connected: bool = False
     ollama_base_url: str = ""
     vision_model: str = ""

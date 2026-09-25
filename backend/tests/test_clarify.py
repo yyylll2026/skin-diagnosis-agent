@@ -281,9 +281,7 @@ def test_decision_dict_is_json_friendly(service: ClarifyService) -> None:
     payload = decision.to_dict()
     json.dumps(payload, ensure_ascii=False)  # 不抛异常即合格
     assert payload["missing_keys"]
-    assert payload["missing"] == [
-        DIMENSION_META[key]["label"] for key in payload["missing_keys"]
-    ]
+    assert payload["missing"] == [DIMENSION_META[key]["label"] for key in payload["missing_keys"]]
 
 
 def test_clear_removes_pending(service: ClarifyService) -> None:

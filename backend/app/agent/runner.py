@@ -254,9 +254,7 @@ class AgentRunner:
             "has_image": bool(state.get("image_bytes")),
             "intent": detected_intent
             or (
-                Intent.IMAGE_DIAGNOSIS.value
-                if state.get("image_bytes")
-                else Intent.CHITCHAT.value
+                Intent.IMAGE_DIAGNOSIS.value if state.get("image_bytes") else Intent.CHITCHAT.value
             ),
             "errors": errors,
         }

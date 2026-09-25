@@ -34,7 +34,6 @@ from app.repositories.db import MetadataStore
 from app.schemas.auth import UserInfo
 from app.schemas.chat import HealthResponse, ModelInfo, SessionHistory, SessionMessage
 from app.services.auth_service import AuthService
-from app.services.ollama_client import OllamaClient
 
 router = APIRouter(prefix="/system", tags=["系统"])
 sessions_router = APIRouter(prefix="/sessions", tags=["会话"])
@@ -43,45 +42,68 @@ sessions_router = APIRouter(prefix="/sessions", tags=["会话"])
 @router.get("/health", summary="健康检查", response_model=HealthResponse)
 async def health(
     settings: Annotated[Settings, Depends(get_settings)],
-    client: Annotated[OllamaClient, Depends(get_ollama_client_dep)],
+    client: Annotated[Any, Depends(get_ollama_client_dep)],
 ) -> HealthResponse:
     """返回各依赖组件的就绪状态。
 
     不做「不健康就返回 503」的处理，理由见模块文档：这里的定位是诊断面板，不是探针。
     """
     warnings: list[str] = []
-    models = await client.list_models()
-    ollama_connected = bool(models)
-    names = {str(m.get("name", "")) for m in models}
+    is_cloud = settings.llm_backend == "cloud"
 
-    def ready(model: str) -> bool:
-        """判断模型是否已拉取（兼容不带 tag 的写法）。"""
-        if model in names:
-            return True
-        base = model.split(":")[0]
-        return any(name.split(":")[0] == base for name in names)
+    if is_cloud:
+        api_key = settings.resolved_cloud_api_key
+        ollama_connected = bool(api_key)
+        if not ollama_connected:
+            warnings.append(
+                "云端模型未配置 API Key，请设置 SKIN_CLOUD_API_KEY 或 DASHSCOPE_API_KEY"
+            )
+        vision_model = settings.effective_vision_model
+        text_model = settings.effective_text_model
+        vision_ready = ollama_connected
+        text_ready = ollama_connected
+        model_base = settings.resolved_cloud_api_base
+    else:
+        models = await client.list_models()
+        ollama_connected = bool(models)
+        names = {str(m.get("name", "")) for m in models}
 
-    if not ollama_connected:
-        warnings.append(
-            f"无法连接 Ollama（{settings.ollama_api}），请确认已执行 ollama serve"
-        )
+        def ready(model: str) -> bool:
+            """判断模型是否已拉取（兼容不带 tag 的写法）。"""
+            if model in names:
+                return True
+            base = model.split(":")[0]
+            return any(name.split(":")[0] == base for name in names)
 
-    vision_ready = ready(settings.vision_model)
-    if ollama_connected and not vision_ready:
-        warnings.append(f"视觉模型未就绪，请执行：ollama pull {settings.vision_model}")
+        if not ollama_connected:
+            warnings.append(f"无法连接 Ollama（{settings.ollama_api}），请确认已执行 ollama serve")
 
-    text_ready = ready(settings.text_model)
-    if ollama_connected and not text_ready:
-        warnings.append(f"文本模型未就绪，请执行：ollama pull {settings.text_model}")
+        vision_model = settings.vision_model
+        text_model = settings.text_model
+        vision_ready = ready(vision_model)
+        if ollama_connected and not vision_ready:
+            warnings.append(f"视觉模型未就绪，请执行：ollama pull {vision_model}")
 
+        text_ready = ready(text_model)
+        if ollama_connected and not text_ready:
+            warnings.append(f"文本模型未就绪，请执行：ollama pull {text_model}")
+        model_base = settings.ollama_api
+
+    embedding_backend = settings.embedding_backend
+    embedding_model = settings.effective_embedding_model
     embedding_ready = True
-    if settings.embedding_backend == "ollama":
+
+    if embedding_backend == "ollama" and not is_cloud:
         embedding_ready = ready(settings.embedding_model)
         if ollama_connected and not embedding_ready:
             warnings.append(
                 f"向量模型未就绪，请执行：ollama pull {settings.embedding_model}"
                 "（或改用 SKIN_EMBEDDING_BACKEND=chroma_default 做快速验证）"
             )
+    elif embedding_backend == "cloud":
+        embedding_ready = ollama_connected
+        if not embedding_ready:
+            warnings.append("云端向量化未就绪：缺少 API Key 或 embedding 后端配置错误")
 
     documents = get_metadata_store().list_documents()
     chunks = vector_store.count_chunks()
@@ -90,14 +112,16 @@ async def health(
 
     return HealthResponse(
         status="ok" if not warnings else "degraded",
+        llm_backend=settings.llm_backend,
+        # 前端状态灯读 ollama_connected；云端模式下用它表示「模型网关可达」
         ollama_connected=ollama_connected,
-        ollama_base_url=settings.ollama_api,
-        vision_model=settings.vision_model,
+        ollama_base_url=model_base,
+        vision_model=vision_model,
         vision_model_ready=vision_ready,
-        text_model=settings.text_model,
+        text_model=text_model,
         text_model_ready=text_ready,
-        embedding_backend=settings.embedding_backend,
-        embedding_model=settings.embedding_model,
+        embedding_backend=embedding_backend,
+        embedding_model=embedding_model,
         embedding_model_ready=embedding_ready,
         collection=settings.chroma_collection,
         indexed_chunks=chunks,
@@ -108,13 +132,16 @@ async def health(
     )
 
 
-@router.get("/models", summary="列出 Ollama 可用模型", response_model=list[ModelInfo])
+@router.get("/models", summary="列出可用模型", response_model=list[ModelInfo])
 async def list_models(
-    client: Annotated[OllamaClient, Depends(get_ollama_client_dep)],
+    client: Annotated[Any, Depends(get_ollama_client_dep)],
+    settings: Annotated[Settings, Depends(get_settings)],
     _: Annotated[UserInfo, Depends(get_current_user)],
 ) -> list[ModelInfo]:
-    """列出本地 Ollama 已拉取的模型及其能力（vision / tools / thinking）。"""
+    """列出模型网关中的可用模型及其能力（vision / tools / thinking）。"""
     models = await client.list_models()
+    if settings.llm_backend == "cloud":
+        return [ModelInfo(name=str(m.get("name", ""))) for m in models]
     result: list[ModelInfo] = []
     for item in models:
         details = item.get("details") or {}

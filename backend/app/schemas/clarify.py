@@ -27,7 +27,7 @@ class ClarifyState(BaseModel):
         default_factory=list, description="缺失的信息维度（内部 key，便于前端做定制渲染）"
     )
     collected: dict[str, str] = Field(
-        default_factory=dict, description="已收集到的信息，形如 {\"出现时间\": \"3 天\"}"
+        default_factory=dict, description='已收集到的信息，形如 {"出现时间": "3 天"}'
     )
     round: int = Field(default=0, description="当前已发起的追问轮次（从 1 开始）")
     max_rounds: int = Field(default=0, description="追问轮次上限")

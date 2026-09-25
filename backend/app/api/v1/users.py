@@ -138,9 +138,7 @@ async def reset_password(
     Raises:
         PermissionDeniedError: 目标是当前登录账号（403）。
     """
-    auth.reset_password(
-        user_id, payload.new_password, actor=actor, client_ip=_client_ip(request)
-    )
+    auth.reset_password(user_id, payload.new_password, actor=actor, client_ip=_client_ip(request))
     return {"reset": True, "user_id": user_id, "sessions_revoked": True}
 
 
