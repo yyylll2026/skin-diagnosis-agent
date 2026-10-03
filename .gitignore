@@ -54,10 +54,12 @@ backend/web/
 sse_raw.txt
 repro.txt
 img_result.json
+_credtest.txt
 
 # ---------- 前端 ----------
 node_modules/
 frontend/dist/
+frontend/.verify-build/
 frontend/.vite/
 npm-debug.log*
 yarn-error.log*
@@ -74,3 +76,4 @@ desktop.ini
 # 存放开发期间的会话记忆与中间报告，属于本机工作状态而非项目产物；
 # 需要归档的正式文档统一放 docs/。
 .workbuddy/
+.workbuddy-ai/
