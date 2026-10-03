@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends
 from app.agent.graph import graph_mermaid
 from app.config import Settings, get_settings
 from app.dependencies import (
+    get_analysis_task_service,
     get_auth_service,
     get_current_user,
     get_metadata_store,
@@ -33,7 +34,8 @@ from app.repositories import vector_store
 from app.repositories.db import MetadataStore
 from app.schemas.auth import UserInfo
 from app.schemas.chat import HealthResponse, ModelInfo, SessionHistory, SessionMessage
-from app.services.auth_service import AuthService
+from app.services.analysis_task_service import AnalysisTaskService
+from app.services.auth_service import PERMISSION_SESSION_READ_ALL, AuthService
 
 router = APIRouter(prefix="/system", tags=["系统"])
 sessions_router = APIRouter(prefix="/sessions", tags=["会话"])
@@ -224,12 +226,15 @@ async def delete_session(
     store: Annotated[MetadataStore, Depends(get_metadata_store)],
     auth: Annotated[AuthService, Depends(get_auth_service)],
     user: Annotated[UserInfo, Depends(get_current_user)],
+    tasks: Annotated[AnalysisTaskService, Depends(get_analysis_task_service)],
 ) -> dict[str, Any]:
-    """删除会话及其全部消息。
+    """删除会话及其消息、追问状态和关联后台任务。
 
     Raises:
         PermissionDeniedError: 该会话属于其他用户（403）。
     """
     auth.ensure_session_access(session_id, user)
+    task_owner = "" if auth.has_permission(user.role, PERMISSION_SESSION_READ_ALL) else user.user_id
+    await tasks.purge_session(task_owner, session_id)
     store.delete_session(session_id)
     return {"deleted": True, "session_id": session_id}

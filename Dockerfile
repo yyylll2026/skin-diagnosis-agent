@@ -48,6 +48,10 @@ WORKDIR /app/backend
 COPY backend/pyproject.toml backend/README.md ./
 COPY backend/app ./app
 COPY backend/scripts ./scripts
+# Alembic 迁移脚本。config.py 用 __file__ 推导 BACKEND_DIR，可编辑安装后
+# 这里就是 /app/backend，所以 alembic/ 必须和 app/ 同级放在同一位置。
+COPY backend/alembic ./alembic
+COPY backend/alembic.ini ./alembic.ini
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -e .
 

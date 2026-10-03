@@ -27,8 +27,8 @@ from app.schemas.auth import UserInfo
 
 @lru_cache(maxsize=1)
 def get_metadata_store() -> MetadataStore:
-    """元数据仓储单例。"""
-    return MetadataStore(get_settings().resolved_sqlite_path)
+    """元数据仓储单例。连接串由 ``SKIN_DATABASE_URL`` 决定（默认 SQLite）。"""
+    return MetadataStore(get_settings().resolved_database_url)
 
 
 @lru_cache(maxsize=1)
@@ -74,6 +74,26 @@ def get_fusion_service() -> FusionService:  # noqa: F821
     from app.services.fusion_service import FusionService
 
     return FusionService()
+
+
+@lru_cache(maxsize=1)
+def get_health_trend_service() -> HealthTrendService:  # noqa: F821
+    """病程趋势聚合服务单例（无状态纯计算，缓存只为统一装配风格）。"""
+    from app.services.health_trend_service import HealthTrendService
+
+    return HealthTrendService()
+
+
+@lru_cache(maxsize=1)
+def get_retrieval_eval_service() -> RetrievalEvalService:  # noqa: F821
+    """检索评测服务单例。
+
+    与检索服务共享同一个 ``RetrievalService``，否则评测跑的是另一份
+    BM25 缓存，测出来的指标和线上实际链路不是一回事。
+    """
+    from app.services.retrieval_eval_service import RetrievalEvalService
+
+    return RetrievalEvalService(get_settings(), get_retrieval_service())
 
 
 @lru_cache(maxsize=1)
@@ -172,6 +192,23 @@ def get_runner_dep() -> AgentRunner:  # noqa: F821
 
 
 @lru_cache(maxsize=1)
+def get_analysis_task_service() -> AnalysisTaskService:  # noqa: F821
+    """异步图像分析任务服务单例。"""
+    from app.services.analysis_task_service import AnalysisTaskService
+
+    settings = get_settings()
+    from app.agent.runner import get_runner
+
+    return AnalysisTaskService(
+        get_metadata_store(),
+        get_runner(),
+        max_concurrency=settings.analysis_max_concurrency,
+        max_pending=settings.analysis_max_pending,
+        retry_cache_minutes=settings.analysis_retry_cache_minutes,
+    )
+
+
+@lru_cache(maxsize=1)
 def get_ollama_client_dep():  # noqa: F821
     """模型网关单例（Ollama 或云端）；函数名保留以兼容既有导入。"""
     from app.services.model_gateway import get_model_gateway
@@ -181,6 +218,9 @@ def get_ollama_client_dep():  # noqa: F821
 
 def warmup() -> None:
     """预热：提前构建 Chroma 集合与编译状态图，避免首个请求超时。"""
+    # 先建元数据库连接并把 schema 升到最新：连接串写错、或容器里漏拷
+    # alembic/ 目录时，应该在启动日志里就暴露出来，而不是等第一个请求才 500。
+    get_metadata_store()
     get_vectorstore()
     get_runner_dep()
 
@@ -188,13 +228,16 @@ def warmup() -> None:
 __all__ = [
     "CurrentUser",
     "build_nodes",
+    "get_analysis_task_service",
     "get_auth_service",
     "get_clarify_service",
     "get_current_user",
     "get_fusion_service",
+    "get_health_trend_service",
     "get_ingest_service",
     "get_metadata_store",
     "get_ollama_client_dep",
+    "get_retrieval_eval_service",
     "get_retrieval_service",
     "get_runner_dep",
     "get_safety_service",

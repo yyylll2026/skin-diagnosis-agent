@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 _TEST_ROOT = Path(tempfile.mkdtemp(prefix="skin-test-"))
 os.environ.setdefault("SKIN_SQLITE_PATH", str(_TEST_ROOT / "app.db"))
@@ -47,3 +48,41 @@ def settings(tmp_path: Path) -> Settings:
 def clean_settings(settings: Settings) -> Settings:
     """语义化别名：明确表示这是一套不污染本机数据的配置。"""
     return settings
+
+
+# 需要「真实开启鉴权 + 独立数据库」的用例共用这套夹具。
+# 之所以要 cache_clear 一整串工厂：单例是进程级的，前一个用例把
+# MetadataStore 指到别的库之后，不清缓存就会串数据。
+_AUTH_SCOPED_FACTORIES = (
+    "get_metadata_store",
+    "get_analysis_task_service",
+    "get_auth_service",
+    "get_clarify_service",
+    "get_ingest_service",
+)
+
+
+@pytest.fixture
+def auth_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """构造一个真实开启鉴权、且数据落在临时目录的 API 客户端。"""
+    monkeypatch.setenv("SKIN_AUTH_ENABLED", "true")
+    monkeypatch.setenv("SKIN_SQLITE_PATH", str(tmp_path / "auth_app.db"))
+    monkeypatch.setenv("SKIN_CHROMA_DIR", str(tmp_path / "chroma"))
+    monkeypatch.setenv("SKIN_EMBEDDING_BACKEND", "chroma_default")
+
+    from app import dependencies
+    from app.config import get_settings
+
+    def _clear() -> None:
+        get_settings.cache_clear()
+        for name in _AUTH_SCOPED_FACTORIES:
+            getattr(dependencies, name).cache_clear()
+
+    _clear()
+    from app.main import create_app
+
+    # 刻意不用 `with TestClient(...)`：进入上下文会触发 lifespan 预热
+    # （建 Chroma 集合、编译图、调模型），单测既慢又脆。见 AGENTS.md。
+    client = TestClient(create_app())
+    yield client
+    _clear()

@@ -40,6 +40,7 @@ def auth_client(tmp_path, monkeypatch: pytest.MonkeyPatch):
     # 漏掉任何一个，测试都可能操作到上一个用例残留的数据库。
     for factory in (
         dependencies.get_metadata_store,
+        dependencies.get_analysis_task_service,
         dependencies.get_auth_service,
         dependencies.get_clarify_service,
         dependencies.get_ingest_service,
@@ -58,6 +59,7 @@ def auth_client(tmp_path, monkeypatch: pytest.MonkeyPatch):
     get_settings.cache_clear()
     for factory in (
         dependencies.get_metadata_store,
+        dependencies.get_analysis_task_service,
         dependencies.get_auth_service,
         dependencies.get_clarify_service,
         dependencies.get_ingest_service,

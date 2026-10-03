@@ -162,6 +162,20 @@ class AccountDisabledError(AppError):
     http_status = 403
 
 
+class AnalysisTaskConflictError(AppError):
+    """后台分析任务当前状态不允许执行所请求的操作。"""
+
+    code = "analysis_task_conflict"
+    http_status = 409
+
+
+class ResourceNotFoundError(AppError):
+    """请求的记录、会话或任务不存在，或不属于当前用户。"""
+
+    code = "not_found"
+    http_status = 404
+
+
 def error_payload(exc: BaseException) -> dict[str, Any]:
     """把任意异常压成统一响应体。"""
     if isinstance(exc, AppError):

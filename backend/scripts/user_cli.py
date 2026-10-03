@@ -54,7 +54,7 @@ def _service() -> AuthService:
     与「接口是否校验身份」无关。关掉鉴权时依然要能建号。
     """
     settings = get_settings()
-    return AuthService(settings, MetadataStore(settings.resolved_sqlite_path))
+    return AuthService(settings, MetadataStore(settings.resolved_database_url))
 
 
 def _read_password(confirm: bool = True) -> str:

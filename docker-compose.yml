@@ -8,6 +8,14 @@
 # 启动：
 #   docker compose up -d --build
 #   前端 http://localhost:5173 ｜ 后端 http://localhost:8000/docs
+#
+# 元数据默认落在 SQLite（app_db 卷），开箱即用。
+# 需要 PostgreSQL 时走 profile，分两步（先起库，再起应用）：
+#   docker compose --profile postgres up -d postgres
+#   SKIN_DATABASE_URL=postgresql+psycopg://skin:skin@postgres:5432/skin \
+#     docker compose --profile postgres up -d backend frontend
+# 之所以分两步：Compose 不允许一个服务 depends_on 一个未启用的 profile 服务，
+# 而给 postgres 加 depends_on 又会让默认（SQLite）启动路径也去找它。
 # =============================================================
 
 services:
@@ -30,6 +38,8 @@ services:
       SKIN_EMBEDDING_MODEL: ${SKIN_EMBEDDING_MODEL:-bge-m3}
       SKIN_CHROMA_DIR: /app/data/chroma
       SKIN_SQLITE_PATH: /app/data/app.db
+      # 留空 = 用 SQLite（默认）。切 PostgreSQL 见文件头的两步说明。
+      SKIN_DATABASE_URL: ${SKIN_DATABASE_URL:-}
       # 前端通过 Nginx 同源代理访问，此处放开本地调试来源
       SKIN_CORS_ORIGINS: http://localhost:5173,http://localhost:8080
     volumes:
@@ -46,6 +56,38 @@ services:
       timeout: 5s
       start_period: 60s
       retries: 3
+    networks:
+      - skin-net
+
+  # ---------------------------------------------------------------
+  # 可选：PostgreSQL（profile = postgres，默认不启动）
+  #
+  # 与 SQLite 的差别只在连接串：表结构由 Alembic 迁移统一创建，
+  # 业务代码一行都不用改。
+  # ---------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: skin-postgres
+    profiles: ["postgres"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-skin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skin}
+      POSTGRES_DB: ${POSTGRES_DB:-skin}
+      # 中文语料必须 UTF8。官方镜像默认就是 UTF8，显式写出来是为了
+      # 换基础镜像时不会悄悄退回到别的编码（表现为中文全部变问号）。
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      # 映射到 5432 方便本机用客户端连；与已有实例冲突时改这里
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-skin} -d ${POSTGRES_DB:-skin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - skin-net
 
@@ -89,6 +131,8 @@ services:
 volumes:
   chroma_data:
   app_db:
+  # PostgreSQL 数据（仅在启用 postgres profile 时创建）
+  pg_data:
   # ollama_models:
 
 networks:

@@ -42,7 +42,7 @@ console = Console()
 
 def _store() -> MetadataStore:
     """构造元数据仓储。"""
-    return MetadataStore(get_settings().resolved_sqlite_path)
+    return MetadataStore(get_settings().resolved_database_url)
 
 
 @app.command("ingest")

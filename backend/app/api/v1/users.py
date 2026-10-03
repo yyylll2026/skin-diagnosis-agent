@@ -22,13 +22,14 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from app.dependencies import get_auth_service, require_permission
+from app.dependencies import get_analysis_task_service, get_auth_service, require_permission
 from app.schemas.auth import (
     ResetPasswordRequest,
     UserCreateRequest,
     UserInfo,
     UserUpdateRequest,
 )
+from app.services.analysis_task_service import AnalysisTaskService
 from app.services.auth_service import (
     PERMISSION_AUDIT_READ,
     PERMISSION_USER_READ,
@@ -109,6 +110,7 @@ async def delete_user(
     request: Request,
     auth: Annotated[AuthService, Depends(get_auth_service)],
     actor: Annotated[UserInfo, Depends(require_permission(PERMISSION_USER_WRITE))],
+    tasks: Annotated[AnalysisTaskService, Depends(get_analysis_task_service)],
 ) -> dict[str, Any]:
     """删除用户。
 
@@ -119,6 +121,7 @@ async def delete_user(
         PermissionDeniedError: 试图删自己，或删除最后一个启用中的管理员（403）。
     """
     auth.delete_user(user_id, actor=actor, client_ip=_client_ip(request))
+    await tasks.purge_user(user_id)
     return {"deleted": True, "user_id": user_id}
 
 

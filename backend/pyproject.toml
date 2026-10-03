@@ -19,6 +19,13 @@ dependencies = [
     # ---- 配置与校验 ----
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",
+    # ---- 数据层 ----
+    # 只用 SQLAlchemy 的 Core（连接 + 方言适配），查询仍是显式 SQL，不引入 ORM；
+    # Alembic 负责 schema 版本管理，运行时不再执行 DDL。
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14.0",
+    # 仅当 SKIN_DATABASE_URL 指向 postgresql+psycopg:// 时才会真正加载
+    "psycopg[binary]>=3.2.3",
     # ---- LangChain / LangGraph 编排 ----
     "langchain>=0.3.10",
     "langchain-core>=0.3.20",
@@ -67,6 +74,12 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501", "B008"]
+
+[tool.ruff.lint.isort]
+# backend/alembic/ 是 Alembic 约定的迁移目录（无 __init__.py）。
+# 不显式声明的话，isort 会把 `import alembic` 当成项目内的一方导入，
+# 把依赖装进错误的 import 分组里。
+known-third-party = ["alembic"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

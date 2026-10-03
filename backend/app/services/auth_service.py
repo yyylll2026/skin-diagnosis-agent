@@ -34,6 +34,7 @@ from typing import Any
 
 import bcrypt
 from loguru import logger
+from sqlalchemy.exc import IntegrityError as SAIntegrityError
 
 from app.config import Settings, get_settings
 from app.core.errors import (
@@ -106,7 +107,7 @@ class AuthService:
             store: 元数据仓储。
         """
         self.settings = settings or get_settings()
-        self.store = store or MetadataStore(self.settings.resolved_sqlite_path)
+        self.store = store or MetadataStore(self.settings.resolved_database_url)
 
     @staticmethod
     def normalize_username(username: str) -> str:
@@ -290,7 +291,10 @@ class AuthService:
                 display_name=display_name or normalized,
                 created_at=self._now_iso(),
             )
-        except sqlite3.IntegrityError as exc:
+        except (sqlite3.IntegrityError, SAIntegrityError) as exc:
+            # 两种异常都要接：底层可能是标准库 sqlite3，也可能经 SQLAlchemy 包装
+            # （PostgreSQL 走后者）。SQLAlchemy 的 IntegrityError 会把 DBAPI 异常
+            # 放在 __cause__ 里，所以两种类型是并列关系而不是继承关系。
             raise UserConflictError(f"用户名 {normalized} 已被占用") from exc
 
     # ------------------------------------------------------------------
@@ -557,7 +561,7 @@ class AuthService:
         return self._to_info(updated)
 
     def delete_user(self, user_id: str, actor: UserInfo | None = None, client_ip: str = "") -> None:
-        """删除用户。
+        """删除用户及其个人健康记录、后台任务；对话历史保留用于审计追溯。
 
         同样有两条保护：不能删自己、不能删最后一个启用中的管理员。
 
@@ -788,7 +792,7 @@ class AuthService:
 
 def get_auth_service() -> AuthService:
     """构造默认鉴权服务（供脚本使用；Web 层请走 dependencies 里的单例）。"""
-    return AuthService(get_settings(), MetadataStore(get_settings().resolved_sqlite_path))
+    return AuthService(get_settings(), MetadataStore(get_settings().resolved_database_url))
 
 
 __all__ = [

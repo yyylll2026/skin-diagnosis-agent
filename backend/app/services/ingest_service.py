@@ -286,7 +286,7 @@ class IngestService:
             store: 元数据仓储，默认按配置新建。
         """
         self.settings = settings or get_settings()
-        self.store = store or MetadataStore(self.settings.resolved_sqlite_path)
+        self.store = store or MetadataStore(self.settings.resolved_database_url)
 
     # ------------------------------------------------------------------
     @staticmethod

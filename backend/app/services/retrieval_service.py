@@ -313,6 +313,7 @@ class RetrievalService:
         top_k: int | None = None,
         category: str | None = None,
         top_n: int | None = None,
+        use_rerank: bool | None = None,
     ) -> list[RetrievedChunk]:
         """单查询混合检索。
 
@@ -321,11 +322,14 @@ class RetrievalService:
             top_k: 每路召回的候选数，默认取配置。
             category: 按分类过滤。
             top_n: 最终返回条数，默认取配置的 rerank_top_n。
+            use_rerank: 按次覆盖重排开关；None 表示跟随配置。评测做 A/B 对比时用。
 
         Returns:
             按相关度降序的检索结果。
         """
-        return self.retrieve_multi([query], top_k=top_k, category=category, top_n=top_n)
+        return self.retrieve_multi(
+            [query], top_k=top_k, category=category, top_n=top_n, use_rerank=use_rerank
+        )
 
     def retrieve_multi(
         self,
@@ -333,6 +337,7 @@ class RetrievalService:
         top_k: int | None = None,
         category: str | None = None,
         top_n: int | None = None,
+        use_rerank: bool | None = None,
     ) -> list[RetrievedChunk]:
         """多查询混合检索（Multi-Query Retrieval）。
 
@@ -347,6 +352,7 @@ class RetrievalService:
             top_k: 每路召回候选数。
             category: 按分类过滤。
             top_n: 最终返回条数。
+            use_rerank: 按次覆盖重排开关；None 表示跟随配置。
 
         Returns:
             融合后的检索结果。
@@ -354,6 +360,7 @@ class RetrievalService:
         cfg = self.settings
         k_candidates = top_k or cfg.retrieval_top_k
         n_final = top_n or cfg.rerank_top_n
+        rerank = cfg.rerank_enabled if use_rerank is None else use_rerank
 
         valid_queries = [q.strip() for q in queries if q and q.strip()]
         if not valid_queries:
@@ -404,7 +411,7 @@ class RetrievalService:
         ranked_ids = sorted(doc_map, key=lambda cid: rrf_scores.get(cid, 0.0), reverse=True)
         ranked_ids = [cid for cid in ranked_ids if blended.get(cid, 0.0) >= cfg.min_relevance]
 
-        if cfg.rerank_enabled and len(ranked_ids) > 1:
+        if rerank and len(ranked_ids) > 1:
             ranked_ids = self._llm_rerank(valid_queries[0], ranked_ids, doc_map)
 
         results: list[RetrievedChunk] = []
@@ -421,7 +428,7 @@ class RetrievalService:
                     score=round(blended.get(chunk_id, 0.0), 4),
                     chunk_index=meta.get("chunk_index"),
                     page=meta.get("page"),
-                    retriever="rerank" if cfg.rerank_enabled else "hybrid",
+                    retriever="rerank" if rerank else "hybrid",
                 )
             )
         return results
@@ -483,10 +490,14 @@ class RetrievalService:
 
     # ------------------------------------------------------------------
     def search(
-        self, query: str, top_k: int = 5, category: str | None = None
+        self,
+        query: str,
+        top_k: int = 5,
+        category: str | None = None,
+        use_rerank: bool | None = None,
     ) -> list[RetrievedChunk]:
-        """对外暴露的检索入口（供 /kb/search 调试接口使用）。"""
-        return self.retrieve_multi([query], top_n=top_k, category=category)
+        """对外暴露的检索入口（供 /kb/search 调试接口与评测使用）。"""
+        return self.retrieve_multi([query], top_n=top_k, category=category, use_rerank=use_rerank)
 
 
 @lru_cache(maxsize=1)

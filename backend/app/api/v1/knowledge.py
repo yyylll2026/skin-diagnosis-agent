@@ -32,6 +32,7 @@ from app.config import Settings, get_settings
 from app.dependencies import (
     get_ingest_service,
     get_metadata_store,
+    get_retrieval_eval_service,
     get_retrieval_service,
     require_permission,
 )
@@ -40,6 +41,9 @@ from app.repositories.db import MetadataStore
 from app.schemas.auth import UserInfo
 from app.schemas.knowledge import (
     DocumentInfo,
+    EvalDataset,
+    EvalRequest,
+    EvalResponse,
     IngestResult,
     SearchRequest,
     SearchResponse,
@@ -51,6 +55,7 @@ from app.services.auth_service import (
     PERMISSION_KB_WRITE,
 )
 from app.services.ingest_service import SUPPORTED_SUFFIXES, IngestService
+from app.services.retrieval_eval_service import RetrievalEvalService
 from app.services.retrieval_service import RetrievalService
 
 router = APIRouter(prefix="/kb", tags=["知识库"])
@@ -168,6 +173,38 @@ async def search_knowledge(
         count=len(results),
         elapsed_ms=int((time.perf_counter() - started) * 1000),
         results=results,
+    )
+
+
+@router.get("/eval/starter", summary="获取检索评测标注模板", response_model=EvalDataset)
+async def eval_starter(
+    _: Annotated[UserInfo, Depends(require_permission(PERMISSION_KB_READ))],
+) -> EvalDataset:
+    """返回一份可直接编辑的标注模板。
+
+    模板里的 ``relevant`` 是**示例文档标题**，需要换成自己知识库里的真实标题或文件名。
+    接口只读，不会写任何文件——标注集由前端持有并随请求提交，
+    这样「评测」这件事不需要在服务端维护状态。
+    """
+    return get_retrieval_eval_service().starter_dataset()
+
+
+@router.post("/eval/run", summary="运行检索效果评测", response_model=EvalResponse)
+async def eval_run(
+    payload: EvalRequest,
+    service: Annotated[RetrievalEvalService, Depends(get_retrieval_eval_service)],
+    _: Annotated[UserInfo, Depends(require_permission(PERMISSION_KB_READ))],
+) -> EvalResponse:
+    """在提交的标注集上量化检索效果（Hit@K / MRR / Recall@K / Precision@K）。
+
+    只走检索链路，**不调用生成模型**：几十条样本几秒就能跑完，可以频繁回归。
+    返回里带逐条明细（期望 vs 实际召回），指标掉了能直接定位到具体样本。
+    """
+    return service.evaluate(
+        payload.cases,
+        top_k=payload.top_k,
+        category=payload.category,
+        use_rerank=payload.use_rerank,
     )
 
 

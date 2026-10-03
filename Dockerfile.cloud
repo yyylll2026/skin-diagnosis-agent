@@ -33,6 +33,9 @@ WORKDIR /app/backend
 COPY backend/pyproject.toml backend/README.md ./
 COPY backend/app ./app
 COPY backend/scripts ./scripts
+# Alembic 迁移脚本：启动时自动 upgrade 到 head，漏拷会直接启动失败
+COPY backend/alembic ./alembic
+COPY backend/alembic.ini ./alembic.ini
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -e .
 

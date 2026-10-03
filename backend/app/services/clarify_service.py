@@ -422,7 +422,7 @@ class ClarifyService:
             store: 元数据仓储（用于持久化追问进度），默认按配置新建。
         """
         self.settings = settings or get_settings()
-        self.store = store or MetadataStore(self.settings.resolved_sqlite_path)
+        self.store = store or MetadataStore(self.settings.resolved_database_url)
 
     # ------------------------------------------------------------------
     # 一、维度抽取

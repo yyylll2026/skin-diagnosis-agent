@@ -28,6 +28,11 @@ COPY --from=builder /install /usr/local
 
 COPY app ./app
 COPY scripts ./scripts
+# Alembic 迁移：启动时由 app/repositories/database.py 自动 upgrade 到 head，
+# 漏拷的表现是启动直接 FileNotFoundError，且只在容器里复现。
+# 两个都拷：alembic/ 是必需的，alembic.ini 只在容器内手跑 CLI 时用得上。
+COPY alembic ./alembic
+COPY alembic.ini ./alembic.ini
 
 # 数据目录挂载点（向量库 / 语料 / 上传文件 / SQLite）
 RUN mkdir -p /app/data/docs /app/data/chroma /app/data/uploads

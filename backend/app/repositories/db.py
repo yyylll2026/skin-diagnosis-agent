@@ -1,16 +1,23 @@
-"""SQLite 元数据仓储。
+"""元数据仓储。
 
 职责边界刻意收窄：**只存结构化元数据与对话历史**，不存向量。
-向量归 Chroma 管，元数据归 SQLite 管，两者通过 ``doc_id`` 关联。
+向量归 Chroma 管，元数据归关系库管，两者通过 ``doc_id`` 关联。
 
-之所以不引入 SQLAlchemy：本项目的元数据操作都是单表简单语句（文档登记、会话与消息、
-追问进度三组），用标准库 sqlite3 可以省掉一个重量级依赖和一套 ORM 心智负担。
+## 数据层现状
+
+SQL 全部是显式语句（不引入 ORM），但**不再绑定 SQLite**：
+连接与方言差异收敛在 ``database.py``，建表交给 Alembic。
+只要 ``SKIN_DATABASE_URL`` 指向 ``postgresql+psycopg://...`` 就能直接跑。
+
+少数语句必须按方言分支，全部集中在本文件里并标注了原因：
+- ``MIN(a, b)`` / ``LEAST(a, b)``：PostgreSQL 没有双参数标量 MIN；
+- ``LIKE`` / ``ILIKE``：SQLite 的 LIKE 对 ASCII 天然不分大小写，
+  PostgreSQL 的 LIKE 区分大小写，要维持同样的搜索体验得用 ILIKE。
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -19,164 +26,53 @@ from typing import Any
 
 from loguru import logger
 
+from app.repositories.database import Database, DatabaseConnection, normalize_database_url
 from app.schemas.knowledge import DocumentInfo
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS documents (
-    doc_id       TEXT PRIMARY KEY,
-    title        TEXT NOT NULL,
-    source       TEXT NOT NULL,
-    category     TEXT NOT NULL DEFAULT '其他',
-    chunk_count  INTEGER NOT NULL DEFAULT 0,
-    size_bytes   INTEGER NOT NULL DEFAULT 0,
-    created_at   TEXT NOT NULL
-);
 
-CREATE TABLE IF NOT EXISTS sessions (
-    session_id  TEXT PRIMARY KEY,
-    title       TEXT NOT NULL DEFAULT '新会话',
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL,
-    -- 归属用户。旧库由 _MIGRATIONS 补这一列；空串表示「鉴权关闭时期创建的会话」。
-    user_id     TEXT NOT NULL DEFAULT ''
-);
+def dialect_min_expression(column: str, ceiling: int, *, is_sqlite: bool) -> str:
+    """构造「取两者较小值」的表达式。
 
--- 注意：这里**不能**建 idx_sessions_user。
--- 索引引用了 user_id，而旧库的 sessions 表没有这一列；`CREATE INDEX` 会在
--- 迁移补列之前执行，于是直接报 "no such column: user_id"。
--- 依赖新列的索引统一放到 _apply_migrations 的最后一步建。
+    SQLite 的双参数 ``MIN(a, b)`` 是标量函数，PostgreSQL 的 ``MIN`` 只有聚合形式，
+    双参数会直接报「函数 min(integer, integer) 不存在」，得改用 ``LEAST``。
 
-CREATE TABLE IF NOT EXISTS messages (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id  TEXT NOT NULL,
-    role        TEXT NOT NULL,
-    content     TEXT NOT NULL,
-    has_image   INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL
-);
+    抽成函数是为了能被单独测到——这类分支如果只写在方法体里，
+    除非真连上 PostgreSQL 否则永远验证不到。
+    """
+    function = "MIN" if is_sqlite else "LEAST"
+    return f"{function}({column}, {ceiling})"
 
-CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
 
-CREATE TABLE IF NOT EXISTS clarifications (
-    session_id     TEXT PRIMARY KEY,
-    collected      TEXT NOT NULL DEFAULT '{}',
-    pending_fields TEXT NOT NULL DEFAULT '[]',
-    rounds         INTEGER NOT NULL DEFAULT 0,
-    updated_at     TEXT NOT NULL
-);
+def dialect_like_operator(*, is_sqlite: bool) -> str:
+    """构造模糊匹配运算符。
 
--- ============================ 鉴权相关 ============================
-
-CREATE TABLE IF NOT EXISTS users (
-    user_id         TEXT PRIMARY KEY,
-    username        TEXT NOT NULL UNIQUE,
-    display_name    TEXT NOT NULL DEFAULT '',
-    password_hash   TEXT NOT NULL,
-    role            TEXT NOT NULL DEFAULT 'customer',
-    status          TEXT NOT NULL DEFAULT 'active',
-    failed_attempts INTEGER NOT NULL DEFAULT 0,
-    locked_until    TEXT NOT NULL DEFAULT '',
-    created_at      TEXT NOT NULL,
-    last_login_at   TEXT NOT NULL DEFAULT ''
-);
-
--- 登录会话。
--- 刻意不叫 sessions：那张表是「对话会话」，两者语义完全不同。
--- 存 token 的 SHA256 而非 token 原文——万一库文件泄露，拿到的哈希无法直接当凭据用。
-CREATE TABLE IF NOT EXISTS auth_sessions (
-    token_hash   TEXT PRIMARY KEY,
-    user_id      TEXT NOT NULL,
-    created_at   TEXT NOT NULL,
-    expires_at   TEXT NOT NULL,
-    last_seen_at TEXT NOT NULL,
-    user_agent   TEXT NOT NULL DEFAULT '',
-    client_ip    TEXT NOT NULL DEFAULT ''
-);
-
-CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
-
-CREATE TABLE IF NOT EXISTS audit_logs (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at  TEXT NOT NULL,
-    actor       TEXT NOT NULL DEFAULT '',
-    action      TEXT NOT NULL,
-    target      TEXT NOT NULL DEFAULT '',
-    result      TEXT NOT NULL DEFAULT 'ok',
-    detail      TEXT NOT NULL DEFAULT '',
-    client_ip   TEXT NOT NULL DEFAULT ''
-);
-
-CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(id DESC);
-"""
-
-# 对既有库的补丁式迁移。
-# `CREATE TABLE IF NOT EXISTS` 只会建新表，**不会给已存在的表加列**——
-# 所以「给 sessions 加 user_id」这类改动必须显式 ALTER，否则老库升级后
-# 查询会直接报 no such column。这里做最小化的列存在性检查。
-_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
-    ("sessions", "user_id", "TEXT NOT NULL DEFAULT ''"),
-)
-
-# 依赖「迁移新增列」的索引。必须在补列之后创建，否则老库上会因列不存在而报错。
-#
-# 这个坑值得记一笔：`_SCHEMA` 里的 `CREATE TABLE IF NOT EXISTS` 在老库上是空操作，
-# 紧随其后的 `CREATE INDEX ... (新列)` 却会真的执行并失败。
-# 换句话说，**只测「全新建库」是测不出这个问题的**，
-# 必须针对「老格式库」单独测（见 tests/test_db_migration.py）。
-_POST_MIGRATION_INDEXES: tuple[str, ...] = (
-    "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, updated_at DESC)",
-)
+    SQLite 的 ``LIKE`` 对 ASCII 天然不区分大小写，PostgreSQL 的 ``LIKE`` 区分。
+    想让「搜 admin 能搜到 Admin」在两套库上表现一致，PG 侧必须用 ``ILIKE``。
+    """
+    return "LIKE" if is_sqlite else "ILIKE"
 
 
 class MetadataStore:
-    """SQLite 元数据仓储。每次操作开独立连接，避免跨线程共享连接的问题。"""
+    """元数据仓储。每次操作开独立连接，避免跨线程共享连接的问题。"""
 
-    def __init__(self, db_path: Path) -> None:
-        """初始化、建表，并对既有库做补齐式迁移。
+    def __init__(self, target: Path | str) -> None:
+        """初始化连接层，并把库结构升级到最新版本。
 
         Args:
-            db_path: SQLite 文件路径。
+            target: SQLite 文件路径（向后兼容），或任意 SQLAlchemy 连接串
+                （如 ``postgresql+psycopg://user:pw@host:5432/skin``）。
+
+        Raises:
+            FileNotFoundError: 打包时漏拷 Alembic 配置或迁移脚本目录。
         """
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
-            conn.executescript(_SCHEMA)
-            self._apply_migrations(conn)
-        logger.info("元数据库就绪: {}", self.db_path)
-
-    @staticmethod
-    def _apply_migrations(conn: sqlite3.Connection) -> None:
-        """给已存在的表补上后来新增的列，再建依赖这些列的索引（幂等）。
-
-        顺序不能颠倒：索引引用的列必须先存在。
-        """
-        for table, column, ddl in _MIGRATIONS:
-            existing = {
-                row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
-            }
-            if not existing:
-                continue  # 表还不存在（全新库由 _SCHEMA 建好，含该列）
-            if column in existing:
-                continue
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
-            logger.info("迁移：为 {} 补充列 {}", table, column)
-
-        for statement in _POST_MIGRATION_INDEXES:
-            conn.execute(statement)
+        self.database = Database(normalize_database_url(target))
+        self.database.ensure_schema()
 
     @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
-        """打开连接并保证提交/回滚。"""
-        conn = sqlite3.connect(self.db_path, timeout=10.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+    def _connect(self) -> Iterator[DatabaseConnection]:
+        """开一个连接并保证提交/回滚。"""
+        with self.database.connect() as connection:
+            yield connection
 
     # ------------------------------------------------------------------
     # 文档登记
@@ -293,11 +189,240 @@ class MetadataStore:
         return [dict(row) for row in reversed(rows)]
 
     def delete_session(self, session_id: str) -> None:
-        """删除会话及其全部消息与追问进度。"""
+        """删除会话消息、追问进度及关联后台任务。"""
         with self._connect() as conn:
             conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
             conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
             conn.execute("DELETE FROM clarifications WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM analysis_tasks WHERE session_id = ?", (session_id,))
+
+    # ------------------------------------------------------------------
+    # 用户健康记录
+    # ------------------------------------------------------------------
+
+    def create_health_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """创建一条归属指定用户的健康记录。"""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO health_records (
+                    record_id, user_id, recorded_on, body_site, symptoms, severity,
+                    notes, created_at, updated_at
+                ) VALUES (
+                    :record_id, :user_id, :recorded_on, :body_site, :symptoms, :severity,
+                    :notes, :created_at, :updated_at
+                )
+                """,
+                record,
+            )
+        return self.get_health_record(str(record["record_id"]), str(record["user_id"])) or {}
+
+    def list_health_records(
+        self, user_id: str, limit: int = 200, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """只列出该用户的记录，按发生日期倒序。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM health_records WHERE user_id = ?
+                ORDER BY recorded_on DESC, created_at DESC, record_id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (user_id, limit, offset),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def export_health_records(self, user_id: str) -> list[dict[str, Any]]:
+        """不分页读取某用户的全部记录，供本人数据导出使用。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM health_records WHERE user_id = ?
+                ORDER BY recorded_on DESC, created_at DESC, record_id DESC
+                """,
+                (user_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_health_record(self, record_id: str, user_id: str) -> dict[str, Any] | None:
+        """按记录 ID 和归属用户查记录，避免跨用户读取。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM health_records WHERE record_id = ? AND user_id = ?",
+                (record_id, user_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_health_records_since(self, user_id: str, since: str) -> list[dict[str, Any]]:
+        """取某用户 ``recorded_on >= since`` 的记录，按时间正序。
+
+        趋势聚合专用：只拉窗口内的数据，不把全部历史读进内存。
+        ``recorded_on`` 存的是 ``YYYY-MM-DD``，字符串比较即日期比较。
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM health_records WHERE user_id = ? AND recorded_on >= ?
+                ORDER BY recorded_on ASC, created_at ASC, record_id ASC
+                """,
+                (user_id, since),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def count_health_records(self, user_id: str) -> int:
+        """统计某用户的历史记录总数（不限时间窗口）。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM health_records WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        return int(row["n"]) if row else 0
+
+    def update_health_record(
+        self, record_id: str, user_id: str, fields: dict[str, Any], updated_at: str
+    ) -> bool:
+        """更新当前用户的记录；字段名由固定白名单限制。"""
+        allowed = {"recorded_on", "body_site", "symptoms", "severity", "notes"}
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return self.get_health_record(record_id, user_id) is not None
+        updates["updated_at"] = updated_at
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"UPDATE health_records SET {assignments} WHERE record_id = ? AND user_id = ?",
+                (*updates.values(), record_id, user_id),
+            )
+        return cursor.rowcount > 0
+
+    def delete_health_record(self, record_id: str, user_id: str) -> bool:
+        """删除当前用户的一条记录。"""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM health_records WHERE record_id = ? AND user_id = ?",
+                (record_id, user_id),
+            )
+        return cursor.rowcount > 0
+
+    def delete_user_health_records(self, user_id: str) -> int:
+        """清除被删除用户的健康记录，避免个人资料成为孤儿数据。"""
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM health_records WHERE user_id = ?", (user_id,))
+        return cursor.rowcount
+
+    # ------------------------------------------------------------------
+    # 异步分析任务
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _decode_analysis_task(row: dict[str, Any]) -> dict[str, Any]:
+        data = dict(row)
+        try:
+            data["result"] = json.loads(data.pop("result_json") or "{}") or None
+        except (json.JSONDecodeError, TypeError):
+            data["result"] = None
+            data.pop("result_json", None)
+        return data
+
+    def create_analysis_task(self, task: dict[str, Any]) -> dict[str, Any]:
+        """持久化后台任务元数据，不接收或写入图片输入。"""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO analysis_tasks (
+                    task_id, user_id, session_id, status, progress, current_step,
+                    created_at, updated_at, started_at, finished_at
+                ) VALUES (
+                    :task_id, :user_id, :session_id, :status, :progress, :current_step,
+                    :created_at, :updated_at, :started_at, :finished_at
+                )
+                """,
+                task,
+            )
+        return self.get_analysis_task(str(task["task_id"]), str(task["user_id"])) or {}
+
+    def get_analysis_task(self, task_id: str, user_id: str) -> dict[str, Any] | None:
+        """按任务 ID 和归属用户读取任务。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM analysis_tasks WHERE task_id = ? AND user_id = ?",
+                (task_id, user_id),
+            ).fetchone()
+        return self._decode_analysis_task(row) if row else None
+
+    def list_analysis_tasks(
+        self, user_id: str, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """只列出当前用户的任务，最新任务优先。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM analysis_tasks WHERE user_id = ?
+                ORDER BY created_at DESC, task_id DESC LIMIT ? OFFSET ?
+                """,
+                (user_id, limit, offset),
+            ).fetchall()
+        return [self._decode_analysis_task(row) for row in rows]
+
+    def update_analysis_task(self, task_id: str, fields: dict[str, Any]) -> bool:
+        """按白名单更新任务状态及结果。"""
+        allowed = {
+            "status",
+            "progress",
+            "current_step",
+            "result",
+            "error",
+            "attempt_count",
+            "updated_at",
+            "started_at",
+            "finished_at",
+        }
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return False
+        if "result" in updates:
+            result = updates.pop("result")
+            updates["result_json"] = json.dumps(result or {}, ensure_ascii=False)
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"UPDATE analysis_tasks SET {assignments} WHERE task_id = ?",
+                (*updates.values(), task_id),
+            )
+        return cursor.rowcount > 0
+
+    def recover_interrupted_analysis_tasks(self, updated_at: str) -> int:
+        """启动时把上次进程遗留的未完成任务标记为中断，不假装可恢复。"""
+        # 双参数取小：SQLite 是 MIN(a, b)，PostgreSQL 没有标量 MIN（MIN 是聚合函数），
+        # 得用 LEAST。写错的表现是 PG 上直接报「聚合函数 MIN 参数过多」。
+        clamp = dialect_min_expression("progress", 95, is_sqlite=self.database.is_sqlite)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"""
+                UPDATE analysis_tasks
+                SET status = 'failed', progress = {clamp},
+                    current_step = '服务重启中断',
+                    error = '服务重启导致任务中断；出于隐私保护，图片未持久化，请重新提交分析。',
+                    updated_at = ?, finished_at = ?
+                WHERE status IN ('queued', 'running')
+                """,
+                (updated_at, updated_at),
+            )
+        return cursor.rowcount
+
+    def delete_analysis_tasks_for_session(self, session_id: str, user_id: str) -> int:
+        """删除会话相关的后台任务。"""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM analysis_tasks WHERE session_id = ? AND user_id = ?",
+                (session_id, user_id),
+            )
+        return cursor.rowcount
+
+    def delete_analysis_tasks_for_user(self, user_id: str) -> int:
+        """删除用户所有分析任务。"""
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM analysis_tasks WHERE user_id = ?", (user_id,))
+        return cursor.rowcount
 
     # ------------------------------------------------------------------
     # 追问澄清进度
@@ -379,7 +504,7 @@ class MetadataStore:
         display_name: str = "",
         created_at: str = "",
     ) -> dict[str, Any]:
-        """创建用户。用户名冲突时抛 sqlite3.IntegrityError，由服务层翻译成业务异常。"""
+        """创建用户。用户名冲突时抛 DBAPI 的 IntegrityError，由服务层翻译成业务异常。"""
         with self._connect() as conn:
             conn.execute(
                 """
@@ -408,10 +533,13 @@ class MetadataStore:
         with self._connect() as conn:
             if keyword.strip():
                 pattern = f"%{keyword.strip()}%"
+                # SQLite 的 LIKE 对 ASCII 本就不区分大小写，PostgreSQL 的 LIKE 区分。
+                # 想让「搜 admin 能搜到 Admin」在两套库上表现一致，PG 侧必须用 ILIKE。
+                like = dialect_like_operator(is_sqlite=self.database.is_sqlite)
                 rows = conn.execute(
-                    """
+                    f"""
                     SELECT * FROM users
-                    WHERE username LIKE ? OR display_name LIKE ?
+                    WHERE username {like} ? OR display_name {like} ?
                     ORDER BY created_at DESC LIMIT ?
                     """,
                     (pattern, pattern, limit),
@@ -449,9 +577,11 @@ class MetadataStore:
         return cursor.rowcount > 0
 
     def delete_user(self, user_id: str) -> bool:
-        """删除用户，并连带清掉其登录会话（对话历史保留，便于审计追溯）。"""
+        """删除用户、登录会话、健康记录与分析任务；对话历史保留便于审计追溯。"""
         with self._connect() as conn:
             conn.execute("DELETE FROM auth_sessions WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM health_records WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM analysis_tasks WHERE user_id = ?", (user_id,))
             cursor = conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
         return cursor.rowcount > 0
 

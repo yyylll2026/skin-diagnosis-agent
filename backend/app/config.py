@@ -101,6 +101,14 @@ class Settings(BaseSettings):
     # ---------------- 会话 ----------------
     session_history_turns: int = 6
 
+    # ---------------- 后台分析任务 ----------------
+    # 单进程并发上限；本地模型一般设为 1，避免多个推理争抢显存。
+    analysis_max_concurrency: int = Field(default=1, ge=1, le=8)
+    # 本机图片较大；限制等待任务数，避免大量图片状态滞留在进程内存。
+    analysis_max_pending: int = Field(default=2, ge=0, le=20)
+    # 失败/取消任务的原始图片只在进程内存短暂保留，供显式重试；绝不写入 SQLite。
+    analysis_retry_cache_minutes: int = Field(default=15, ge=1, le=60)
+
     # ---------------- 追问澄清（信息完备性判断） ----------------
     clarify_enabled: bool = True
     # 命中多少个「核心维度」才算信息足够。核心维度共 4 个：
@@ -144,6 +152,13 @@ class Settings(BaseSettings):
 
     # ---------------- 持久化 ----------------
     sqlite_path: Path | None = None
+    # 完整数据库连接串。留空时回落到 sqlite:///<resolved_sqlite_path>，
+    # 保证「克隆即用」与全部既有测试不受影响。
+    # 切到 PostgreSQL 时形如：
+    #   postgresql+psycopg://skin:password@postgres:5432/skin
+    # 必须带 +psycopg 驱动后缀——SQLAlchemy 默认会去找 psycopg2，
+    # 而本项目装的是 psycopg 3，少了后缀会在建引擎时报 ModuleNotFoundError。
+    database_url: str = ""
     # 数据根目录。留空则用 backend/data（本地开发）。
     # 容器部署时必须指向挂载的持久化卷，否则容器重启后向量库、会话历史、
     # 上传文件全部丢失（魔搭创空间对应 /mnt/workspace）。
@@ -230,8 +245,20 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def resolved_sqlite_path(self) -> Path:
-        """SQLite 元数据库路径（文档登记表 / 会话历史）。"""
+        """SQLite 元数据库路径（未配置 ``database_url`` 时使用）。"""
         return self.sqlite_path or (self.data_dir / "app.db")
+
+    @property
+    def resolved_database_url(self) -> str:
+        """实际使用的数据库连接串。
+
+        显式配置的 ``SKIN_DATABASE_URL`` 优先；未配置时用 SQLite 文件路径。
+        这是**唯一**决定元数据存哪里的入口，仓储层不再自己拼路径。
+        """
+        configured = (self.database_url or "").strip()
+        if configured:
+            return configured
+        return f"sqlite:///{self.resolved_sqlite_path.as_posix()}"
 
     @property
     def resolved_web_dir(self) -> Path:
