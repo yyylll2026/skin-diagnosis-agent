@@ -12,6 +12,8 @@ import { renderMarkdown } from '../../utils/markdown'
  * markdown 渲染（v-html）被收敛在本组件的 computed 里，
  * 只会重算当前这一条消息，而不是像拆分前那样整列表重跑。
  */
+const emit = defineEmits(['retry'])
+
 const props = defineProps({
   message: {
     type: Object,
@@ -39,6 +41,7 @@ const hasSources = computed(
       <div v-if="showNodeStatus" class="node-status">
         <span class="node-spinner"></span>
         <span>{{ message.nodeText }}</span>
+        <span v-if="typeof message.progress === 'number'" class="progress-label">{{ message.progress }}%</span>
       </div>
 
       <div v-if="message.content" class="md-body" v-html="html"></div>
@@ -55,6 +58,16 @@ const hasSources = computed(
       <div v-if="message.status === 'error'" class="error-box">
         <span class="error-title">生成失败</span>
         <span class="error-text">{{ message.error || '请求出现异常，请重试' }}</span>
+        <el-button
+          v-if="message.retryAvailable"
+          class="retry-button"
+          type="danger"
+          plain
+          size="small"
+          @click="emit('retry')"
+        >
+          重试分析
+        </el-button>
       </div>
       <p v-else-if="message.status === 'stopped'" class="stopped-tip">已停止生成</p>
     </div>
@@ -95,6 +108,12 @@ const hasSources = computed(
   color: var(--brand);
   font-size: 12.5px;
   font-weight: 500;
+}
+
+.progress-label {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .node-spinner {
@@ -155,6 +174,11 @@ const hasSources = computed(
   font-size: 12.5px;
   color: var(--danger-text);
   word-break: break-word;
+}
+
+.retry-button {
+  align-self: flex-start;
+  margin-top: 5px;
 }
 
 .stopped-tip {

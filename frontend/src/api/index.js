@@ -144,6 +144,43 @@ export function listAuditLogs(limit = 100, action = '') {
   return request(http.get('/audit/logs', { params: { limit, ...(action ? { action } : {}) } }))
 }
 
+/* ------------------------------ 个人健康记录 ------------------------------ */
+
+/** 获取当前账号的健康记录时间线 */
+export function listHealthRecords(limit = 100, offset = 0) {
+  return request(http.get('/health-records', { params: { limit, offset } }))
+}
+
+/** 新增健康记录 */
+export function createHealthRecord(payload) {
+  return request(http.post('/health-records', payload))
+}
+
+/** 更新本人健康记录 */
+export function updateHealthRecord(recordId, payload) {
+  return request(http.patch(`/health-records/${encodeURIComponent(recordId)}`, payload))
+}
+
+/** 删除本人健康记录 */
+export function deleteHealthRecord(recordId) {
+  return request(http.delete(`/health-records/${encodeURIComponent(recordId)}`))
+}
+
+/** 导出本人全部记录为 JSON 文件 */
+export function exportHealthRecords() {
+  return request(http.get('/health-records/export', { responseType: 'blob' }))
+}
+
+/**
+ * 病程趋势聚合：GET /api/v1/health-records/trends
+ *
+ * 聚合在后端完成（按天序列 / 部位分布 / 程度分布），前端只负责画图——
+ * 把「算」和「画」分开，避免在浏览器里重复实现一遍窗口与分档逻辑。
+ */
+export function getHealthTrends(days = 90) {
+  return request(http.get('/health-records/trends', { params: { days } }))
+}
+
 /* ------------------------------ 系统 ------------------------------ */
 
 /** 健康检查：GET /api/v1/system/health */
@@ -191,6 +228,43 @@ export function deleteDocument(docId) {
 /** 检索：POST /api/v1/kb/search */
 export function searchKnowledge(query, topK = 5) {
   return request(http.post('/kb/search', { query, top_k: topK }))
+}
+
+/** 检索评测标注模板：GET /api/v1/kb/eval/starter */
+export function getEvalStarter() {
+  return request(http.get('/kb/eval/starter'))
+}
+
+/**
+ * 运行检索评测：POST /api/v1/kb/eval/run
+ *
+ * 只走检索链路（不调生成模型），但样本多时仍要逐条跑混合检索，
+ * 所以超时给得比普通请求宽。
+ */
+export function runRetrievalEval(payload) {
+  return request(http.post('/kb/eval/run', payload, { timeout: 180000 }))
+}
+
+/* ------------------------------ 后台分析任务 ------------------------------ */
+
+/** 提交后台图片分析，快速返回任务 ID */
+export function createAnalysisTask(payload) {
+  return request(http.post('/analysis-tasks', payload, { timeout: 120000 }))
+}
+
+/** 查询后台任务状态与最终结果 */
+export function getAnalysisTask(taskId) {
+  return request(http.get(`/analysis-tasks/${encodeURIComponent(taskId)}`))
+}
+
+/** 取消后台任务 */
+export function cancelAnalysisTask(taskId) {
+  return request(http.post(`/analysis-tasks/${encodeURIComponent(taskId)}/cancel`))
+}
+
+/** 在服务端仍短时保留原始输入时重试失败任务 */
+export function retryAnalysisTask(taskId) {
+  return request(http.post(`/analysis-tasks/${encodeURIComponent(taskId)}/retry`))
 }
 
 /* ------------------------------ 智能体流式对话 ------------------------------ */
@@ -457,11 +531,25 @@ export default {
   resetUserPassword,
   forceLogoutUser,
   listAuditLogs,
+  // 个人健康记录
+  listHealthRecords,
+  createHealthRecord,
+  updateHealthRecord,
+  deleteHealthRecord,
+  exportHealthRecords,
+  getHealthTrends,
   // 知识库
   listDocuments,
   uploadDocument,
   deleteDocument,
   searchKnowledge,
+  getEvalStarter,
+  runRetrievalEval,
+  // 后台分析任务
+  createAnalysisTask,
+  getAnalysisTask,
+  cancelAnalysisTask,
+  retryAnalysisTask,
   // 对话
   streamAgentChat,
   setUnauthorizedHandler,

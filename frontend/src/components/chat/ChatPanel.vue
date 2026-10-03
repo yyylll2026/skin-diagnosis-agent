@@ -13,6 +13,8 @@ import { useSidebar } from '../../composables/useSidebar'
  * 消息列表渲染、滚动调度、输入区接线。
  * 流式发送 / 停止逻辑在 useAgentChat，单条消息渲染在 UserMessage / AssistantMessage。
  */
+const emit = defineEmits(['open-health-records'])
+
 const { currentSession, currentMessages, createSession } = useSessions()
 const { isMobile, openMobile } = useSidebar()
 
@@ -42,7 +44,7 @@ function scheduleScroll() {
   })
 }
 
-const { generating, send, stop } = useAgentChat({
+const { generating, send, stop, retryTask } = useAgentChat({
   input,
   image,
   useKnowledge,
@@ -74,7 +76,10 @@ function onNewSession() {
           <p class="header-sub">多模态皮肤图像分析与健康咨询</p>
         </div>
       </div>
-      <el-button text @click="onNewSession">切换为新会话</el-button>
+      <div class="header-actions">
+        <el-button plain @click="emit('open-health-records')">个人健康记录</el-button>
+        <el-button text @click="onNewSession">切换为新会话</el-button>
+      </div>
     </header>
 
     <div ref="scrollRef" class="messages">
@@ -82,7 +87,7 @@ function onNewSession() {
 
       <template v-for="msg in messages" :key="msg.id">
         <UserMessage v-if="msg.role === 'user'" :message="msg" />
-        <AssistantMessage v-else :message="msg" />
+        <AssistantMessage v-else :message="msg" @retry="retryTask(msg)" />
       </template>
     </div>
 
@@ -122,6 +127,13 @@ function onNewSession() {
   align-items: center;
   gap: 10px;
   min-width: 0;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
 }
 
 .header-text {
@@ -180,6 +192,16 @@ function onNewSession() {
 
   .header-sub {
     display: none;
+  }
+
+  .header-actions {
+    gap: 0;
+  }
+
+  .header-actions :deep(.el-button) {
+    padding-right: 6px;
+    padding-left: 6px;
+    font-size: 12px;
   }
 
   .messages {

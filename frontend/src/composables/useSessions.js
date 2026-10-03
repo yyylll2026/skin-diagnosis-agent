@@ -25,7 +25,14 @@ function safeParse(raw) {
 
 function persist() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.value))
+    // 图片预览仅留在当前页面内存中，不写入 localStorage，避免健康照片长期留在浏览器存储。
+    const safeSessions = sessions.value.map((session) => ({
+      ...session,
+      messages: (session.messages || []).map((message) =>
+        message?.image ? { ...message, image: '' } : message
+      ),
+    }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(safeSessions))
   } catch (err) {
     // 超出配额或隐私模式：静默降级，不影响本次会话使用
   }
@@ -37,7 +44,13 @@ function normalizeSession(raw) {
     title: typeof raw?.title === 'string' && raw.title ? raw.title : '新会话',
     createdAt: Number(raw?.createdAt) || Date.now(),
     updatedAt: Number(raw?.updatedAt) || Number(raw?.createdAt) || Date.now(),
-    messages: Array.isArray(raw?.messages) ? raw.messages : [],
+    messages: Array.isArray(raw?.messages)
+      ? raw.messages.map((message) => ({
+          ...message,
+          hasImage: !!message?.image || !!message?.hasImage,
+          image: '',
+        }))
+      : [],
   }
 }
 
@@ -102,6 +115,8 @@ function init() {
     if (list.length) {
       sessions.value = list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
       currentId.value = sessions.value[0].id
+      // 迁移旧版本可能持久化的图片预览，避免清理后仍留在 localStorage。
+      persist()
     }
   }
 

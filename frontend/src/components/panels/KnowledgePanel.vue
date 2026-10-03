@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { deleteDocument, listDocuments, searchKnowledge, uploadDocument } from '../../api'
 import SourceCard from '../common/SourceCard.vue'
+import RetrievalEvalPanel from './RetrievalEvalPanel.vue'
 import { useSidebar } from '../../composables/useSidebar'
 import { normalizeSource, pickList } from '../../utils/common'
 
@@ -12,6 +13,9 @@ const { isMobile } = useSidebar()
 
 /** 窄屏下抽屉占满全宽 */
 const drawerSize = computed(() => (isMobile.value ? '100%' : '620px'))
+
+/** 默认落在文档页：上传/查看文档是最高频的动作 */
+const activeTab = ref('docs')
 
 const CATEGORIES = ['皮肤疾病', '用药指南', '护理建议', '其他']
 
@@ -148,85 +152,106 @@ watch(
     :size="drawerSize"
     :destroy-on-close="false"
   >
-    <section class="section">
-      <h3 class="section-title">上传文档</h3>
-      <el-upload
-        ref="uploadRef"
-        drag
-        :auto-upload="false"
-        :limit="1"
-        :show-file-list="true"
-        :on-change="onFileChange"
-        :on-remove="onFileRemove"
-        accept=".txt,.md,.pdf,.docx,.doc,.csv"
-      >
-        <div class="upload-hint">
-          <p class="upload-main">将文件拖到此处，或点击选择</p>
-          <p class="upload-sub">支持 txt / md / pdf / docx 等文本类文档</p>
-        </div>
-      </el-upload>
+    <el-tabs v-model="activeTab" class="kb-tabs">
+      <el-tab-pane label="文档" name="docs">
+        <section class="section">
+          <h3 class="section-title">上传文档</h3>
+          <el-upload
+            ref="uploadRef"
+            drag
+            :auto-upload="false"
+            :limit="1"
+            :show-file-list="true"
+            :on-change="onFileChange"
+            :on-remove="onFileRemove"
+            accept=".txt,.md,.pdf,.docx,.doc,.csv"
+          >
+            <div class="upload-hint">
+              <p class="upload-main">将文件拖到此处，或点击选择</p>
+              <p class="upload-sub">支持 txt / md / pdf / docx 等文本类文档</p>
+            </div>
+          </el-upload>
 
-      <div class="upload-bar">
-        <el-select v-model="category" class="category-select" placeholder="选择分类">
-          <el-option v-for="item in CATEGORIES" :key="item" :label="item" :value="item" />
-        </el-select>
-        <el-button type="primary" :loading="uploading" :disabled="!hasPending" @click="submitUpload">
-          上传并入库
-        </el-button>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="section-head">
-        <h3 class="section-title">文档列表</h3>
-        <el-button link type="primary" :loading="loadingDocs" @click="loadDocuments">刷新</el-button>
-      </div>
-
-      <el-table v-loading="loadingDocs" :data="documents" size="small" empty-text="暂无文档">
-        <el-table-column prop="title" label="文件名" min-width="150" show-overflow-tooltip />
-        <el-table-column label="分类" width="96">
-          <template #default="{ row }">
-            <el-tag size="small" effect="plain" type="info">{{ row.category }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="chunk_count" label="分块数" width="78" align="center" />
-        <el-table-column prop="created_at" label="入库时间" width="150" show-overflow-tooltip />
-        <el-table-column label="操作" width="72" align="center">
-          <template #default="{ row }">
+          <div class="upload-bar">
+            <el-select v-model="category" class="category-select" placeholder="选择分类">
+              <el-option v-for="item in CATEGORIES" :key="item" :label="item" :value="item" />
+            </el-select>
             <el-button
-              link
-              type="danger"
-              :loading="removingId === row.doc_id"
-              @click="removeDoc(row)"
+              type="primary"
+              :loading="uploading"
+              :disabled="!hasPending"
+              @click="submitUpload"
             >
-              删除
+              上传并入库
             </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </section>
+          </div>
+        </section>
 
-    <section class="section">
-      <h3 class="section-title">检索测试</h3>
-      <div class="search-bar">
-        <el-input
-          v-model="query"
-          placeholder="输入问题，例如：湿疹的日常护理建议"
-          clearable
-          @keydown.enter="runSearch"
-        />
-        <el-button type="primary" :loading="searching" @click="runSearch">检索</el-button>
-      </div>
+        <section class="section">
+          <div class="section-head">
+            <h3 class="section-title">文档列表</h3>
+            <el-button link type="primary" :loading="loadingDocs" @click="loadDocuments">
+              刷新
+            </el-button>
+          </div>
 
-      <div v-if="results.length" class="hits">
-        <SourceCard v-for="(hit, index) in results" :key="`${hit.key}-${index}`" :item="hit" />
-      </div>
-      <p v-else-if="searched && !searching" class="hits-empty">未检索到相关内容</p>
-    </section>
+          <el-table v-loading="loadingDocs" :data="documents" size="small" empty-text="暂无文档">
+            <el-table-column prop="title" label="文件名" min-width="150" show-overflow-tooltip />
+            <el-table-column label="分类" width="96">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain" type="info">{{ row.category }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="chunk_count" label="分块数" width="78" align="center" />
+            <el-table-column prop="created_at" label="入库时间" width="150" show-overflow-tooltip />
+            <el-table-column label="操作" width="72" align="center">
+              <template #default="{ row }">
+                <el-button
+                  link
+                  type="danger"
+                  :loading="removingId === row.doc_id"
+                  @click="removeDoc(row)"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
+      </el-tab-pane>
+
+      <el-tab-pane label="检索测试" name="search" lazy>
+        <section class="section">
+          <h3 class="section-title">单条检索</h3>
+          <div class="search-bar">
+            <el-input
+              v-model="query"
+              placeholder="输入问题，例如：湿疹的日常护理建议"
+              clearable
+              @keydown.enter="runSearch"
+            />
+            <el-button type="primary" :loading="searching" @click="runSearch">检索</el-button>
+          </div>
+
+          <div v-if="results.length" class="hits">
+            <SourceCard v-for="(hit, index) in results" :key="`${hit.key}-${index}`" :item="hit" />
+          </div>
+          <p v-else-if="searched && !searching" class="hits-empty">未检索到相关内容</p>
+        </section>
+      </el-tab-pane>
+
+      <el-tab-pane label="效果评测" name="eval" lazy>
+        <RetrievalEvalPanel :documents="documents" />
+      </el-tab-pane>
+    </el-tabs>
   </el-drawer>
 </template>
 
 <style scoped>
+.kb-tabs :deep(.el-tabs__header) {
+  margin-bottom: 16px;
+}
+
 .section {
   padding-bottom: 18px;
   margin-bottom: 18px;

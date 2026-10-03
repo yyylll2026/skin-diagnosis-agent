@@ -10,7 +10,7 @@ import { useSidebar } from '../../composables/useSidebar'
  *
  * 桌面端可收起为窄条；移动端（≤860px）作为浮层抽屉渲染（由 App.vue 控制容器类名）。
  */
-const emit = defineEmits(['open-knowledge', 'open-users'])
+const emit = defineEmits(['open-knowledge', 'open-users', 'open-health-records'])
 
 const { sessions, currentId, createSession, selectSession, removeSession } = useSessions()
 const { authEnabled, isLoggedIn, isAdmin, displayName, can, requireLogin, logout } = useAuth()
@@ -116,6 +116,15 @@ async function onLogout() {
     </div>
 
     <div v-show="!collapsed || isMobile" class="sidebar-bottom">
+      <el-button
+        v-if="!authEnabled || isLoggedIn"
+        class="kb-entry"
+        plain
+        @click="emit('open-health-records')"
+      >
+        个人健康记录
+      </el-button>
+
       <!-- 入口按权限显隐。注意这只是体验优化：
            客户即使手工调用 /kb/documents 也会在服务端拿到 403 -->
       <el-button v-if="canManageKnowledge" class="kb-entry" plain @click="emit('open-knowledge')">

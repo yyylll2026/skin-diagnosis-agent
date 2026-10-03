@@ -14,6 +14,7 @@ defineProps({
   <div class="row row-user">
     <div class="user-stack">
       <img v-if="message.image" class="user-image" :src="message.image" alt="上传的皮肤图像" />
+      <div v-else-if="message.hasImage" class="image-placeholder">已上传图片（为保护隐私，图片不会保存在浏览器存储中）</div>
       <div v-if="message.content" class="user-bubble">{{ message.content }}</div>
     </div>
   </div>
@@ -41,6 +42,15 @@ defineProps({
   border: 1px solid var(--border);
   box-shadow: var(--card-shadow);
   object-fit: cover;
+}
+
+.image-placeholder {
+  padding: 7px 11px;
+  border: 1px dashed var(--brand-border);
+  border-radius: var(--radius-sm);
+  background: var(--brand-weak);
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .user-bubble {

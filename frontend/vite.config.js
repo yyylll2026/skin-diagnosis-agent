@@ -26,6 +26,10 @@ export default defineConfig({
           if (id.includes('markdown-it') || id.includes('linkify-it') || id.includes('mdurl') || id.includes('uc.micro')) {
             return 'markdown'
           }
+          // ECharts 单独分包。它只被「个人健康记录」抽屉用到，而那是个异步组件；
+          // 若跟着 vendor 走，vendor 就成了入口的静态依赖，图表库会在首屏被下载。
+          // 单独成块后它只挂在异步链上，不开抽屉就不会加载。
+          if (id.includes('echarts') || id.includes('zrender')) return 'echarts'
           return 'vendor'
         },
       },

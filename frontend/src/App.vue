@@ -11,6 +11,7 @@ import { useSidebar } from './composables/useSidebar'
 // 管理面板按首开懒加载：普通用户永远用不到，不进首屏 chunk
 const KnowledgePanel = defineAsyncComponent(() => import('./components/panels/KnowledgePanel.vue'))
 const UserPanel = defineAsyncComponent(() => import('./components/panels/UserPanel.vue'))
+const HealthRecordsPanel = defineAsyncComponent(() => import('./components/panels/HealthRecordsPanel.vue'))
 
 const { init: initSessions } = useSessions()
 
@@ -34,14 +35,19 @@ installUnauthorizedHandler()
 
 const knowledgeOpen = ref(false)
 const userPanelOpen = ref(false)
+const healthRecordsOpen = ref(false)
 // 首次打开后才真正挂载（并加载）对应面板 chunk
 const knowledgeMounted = ref(false)
 const userPanelMounted = ref(false)
+const healthRecordsMounted = ref(false)
 watch(knowledgeOpen, (open) => {
   if (open) knowledgeMounted.value = true
 })
 watch(userPanelOpen, (open) => {
   if (open) userPanelMounted.value = true
+})
+watch(healthRecordsOpen, (open) => {
+  if (open) healthRecordsMounted.value = true
 })
 
 /**
@@ -74,7 +80,11 @@ onBeforeUnmount(() => {
         'is-mobile-open': isMobile && mobileOpen,
       }"
     >
-      <AppSidebar @open-knowledge="knowledgeOpen = true" @open-users="userPanelOpen = true" />
+      <AppSidebar
+        @open-knowledge="knowledgeOpen = true"
+        @open-users="userPanelOpen = true"
+        @open-health-records="healthRecordsOpen = true"
+      />
     </aside>
 
     <!-- 移动端侧栏遮罩 -->
@@ -88,7 +98,7 @@ onBeforeUnmount(() => {
     <main class="main">
       <!-- 未登录时不挂载 ChatPanel：既避免它发请求吃 401，
            也避免用户看到一个可以打字但发不出去的界面 -->
-      <ChatPanel v-if="canUseApp" />
+      <ChatPanel v-if="canUseApp" @open-health-records="healthRecordsOpen = true" />
       <div v-else class="gate">
         <p class="gate-title">请先登录</p>
         <p class="gate-text">本系统需要登录后使用。客户账号可提问并只读查看知识库。</p>
@@ -98,6 +108,7 @@ onBeforeUnmount(() => {
 
     <KnowledgePanel v-if="knowledgeMounted" v-model="knowledgeOpen" />
     <UserPanel v-if="userPanelMounted" v-model="userPanelOpen" />
+    <HealthRecordsPanel v-if="healthRecordsMounted" v-model="healthRecordsOpen" />
     <LoginDialog />
   </div>
 </template>
