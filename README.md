@@ -43,16 +43,19 @@ license: Apache License 2.0
 | 🖼️ 结构化视觉诊断 | `format` 传 JSON Schema 做语法约束，三级降级保证任何模型都能跑 |
 | 🔗 图文融合 | 视觉结论驱动检索，知识库依据反哺生成，而非两套独立逻辑 |
 | 🛡️ 三层安全防线 | 提示词约束 + 结构约束 + **22 条确定性规则兜底**（风险等级只上调不下调） |
-| ⚡ 流式体验 | 文本逐 token 输出 + 节点级进度提示（「正在分析图像…」「正在检索知识库…」） |
-| 🧩 全局降级 | Ollama 掉线、模型吐脏数据、知识库为空、图片格式非法，都有可读的降级结果 |
-| 🔒 纯本地 | 全部推理在本地完成，图片与对话不出内网 |
+| 异步分析 | 图片分析作为后台任务运行，支持节点进度、状态查询、取消、短时重试与刷新后恢复查询 |
+| 全局降级 | 模型掉线、输出格式异常、知识库为空、图片格式非法，都有可读的降级结果 |
+| 隐私与权限 | httpOnly 会话、角色权限、会话归属校验；图片不写入服务端任务表或浏览器 localStorage |
+| 个人记录 | 用户可维护自己的健康记录时间线，支持修改、删除与 JSON 导出 |
+| 📈 病程趋势 | 把健康记录聚合为按日程度折线、部位分布与程度占比三张图（ECharts 按需加载），支持 30/90/180/365 天窗口 |
+| 📊 检索评测 | 用自带标注集对混合检索跑 Recall@K / Precision@K / MRR / Hit Rate，支持按分类分组与开关重排做 A/B |
 
 ## 架构一览
 
 ```
 Vue 3 + Element Plus
         │ HTTP / SSE
-FastAPI（chat · diagnosis · knowledge · system）
+FastAPI（chat · diagnosis · analysis-tasks · health-records · knowledge · system）
         │ AgentState
 LangGraph：preprocess → route ─┬─► vision_analyze ─► build_query ─┐
                                ├─► build_query ────────────────────┤
@@ -61,8 +64,11 @@ LangGraph：preprocess → route ─┬─► vision_analyze ─► build_query 
         │
 Services：Vision · Ingest · Retrieval · Fusion · Safety
         │
-Chroma（向量）· SQLite（元数据）· Ollama（qwen2.5vl:7b · bge-m3）
+Chroma（向量）· PostgreSQL / SQLite（会话 / 用户 / 记录 / 任务，SQLAlchemy + Alembic）· Ollama 或 OpenAI 兼容云端模型
 ```
+
+> 元数据默认落 SQLite（零依赖起步），设 `SKIN_DATABASE_URL` 即可切到 PostgreSQL
+> （`postgresql+psycopg://…`）；建表由 Alembic 迁移统一管理，运行时不再执行任何 DDL。
 
 完整的架构说明、接口契约、链路策略与设计决策，见：
 
@@ -133,6 +139,11 @@ npm run dev
 ```bash
 docker compose up -d --build
 # 前端 http://localhost:8080 ｜ 后端 http://localhost:8000/docs
+
+# 想用 PostgreSQL 而不是内置 SQLite：追加 postgres 服务并把连接串透给后端
+# 账号密码默认 skin/skin，可在 .env 里用 POSTGRES_USER / POSTGRES_PASSWORD 覆盖
+SKIN_DATABASE_URL=postgresql+psycopg://skin:skin@postgres:5432/skin \
+  docker compose --profile postgres up -d --build
 ```
 
 **部署到云端**（单容器：Ollama + FastAPI + 前端打包在一起，只暴露一个端口）：
@@ -151,15 +162,17 @@ docker run -p 7860:7860 -v skin-data:/mnt/workspace skin-diagnosis-agent
 - 魔搭创空间的逐步操作 → [deploy/README.md](deploy/README.md)
 
 > ⚠️ 部署前请读一遍部署指南第六节：公网部署会让皮肤照片离开本机，
-> 与本项目「数据不出内网」的原始定位冲突；当前也尚未做鉴权与限流。
+> 与本项目本地优先的隐私定位不同。项目已提供账号鉴权、角色权限和会话隔离；公网 HTTPS 部署仍须正确设置安全 Cookie，且目前没有 IP/账号级限流。后台任务执行器是单进程内存队列，多 worker / 多副本部署前应替换为 Redis/Celery 等共享队列方案。
 
 ## 使用方式
 
 ### 界面
 
 - **文字问答** — 直接提问，如「皮肤溃疡超过多久不愈合需要就医？」
-- **图片识别** — 拖拽或粘贴皮肤照片，可补充描述，得到结构化诊断卡片
-- **知识库管理** — 右上角抽屉：上传文档、查看列表、检索测试
+- **图片分析** — 拖拽或粘贴照片，提交后台任务；可查看节点进度、停止分析，失败时在图片仍处于短时内存窗口内重试
+- **个人健康记录** — 在侧栏打开，默认是**病程趋势**（程度折线 / 部位分布 / 程度占比，可切时间窗），切到「时间线」标签可手工记录症状、日期、部位与备注，并编辑、删除或导出 JSON
+- **知识库管理** — 上传文档、查看列表、检索测试；另有**效果评测**面板：粘贴标注集跑 Recall@K / Precision@K / MRR / Hit Rate（管理员权限）
+- **账号与权限** — 登录注册、客户/管理员角色、会话隔离、管理员用户管理与审计
 
 ### 命令行
 
@@ -195,6 +208,7 @@ make test          # 跑测试
    显存不足时切到 `qwen2.5vl:3b`。
 4. **首次请求会较慢**。模型加载需要几十秒，服务启动时已做预热（Chroma 建集合 + 图编译），
    并设置了 `keep_alive=30m` 让模型常驻显存。
+5. **后台分析队列是单进程实现**。当前图片分析并发上限为 1、待处理任务上限为 2；状态与结果保存在元数据库（SQLite / PostgreSQL），原始图片仅保留在服务进程内存。失败重试图片最多缓存 2 项、默认保留 15 分钟；进程重启时未完成任务会标记为中断，需重新上传。健康记录是敏感个人数据，存储在元数据库，可由本人导出/删除，删除账号时一并清除。
 
 ## 项目结构
 
@@ -202,12 +216,13 @@ make test          # 跑测试
 skin-diagnosis-agent/
 ├── backend/            # FastAPI + LangGraph + Chroma
 │   ├── app/            #   core / schemas / agent / services / repositories / api
+│   ├── alembic/        #   数据库迁移（env.py + versions/）
 │   ├── scripts/        #   知识库运维 CLI
-│   ├── tests/          #   pytest（62+ 用例，不依赖 Ollama）
-│   └── data/           #   语料 / 向量库 / 上传件 / SQLite
-├── frontend/           # Vue 3 + Vite + Element Plus
+│   ├── tests/          #   pytest（240+ 用例，不依赖 Ollama）
+│   └── data/           #   语料 / 向量库 / 上传件 / 本地 SQLite
+├── frontend/           # Vue 3 + Vite + Element Plus（ECharts 按需加载）
 ├── docs/               # 系统设计文档 + 接口文档
-├── docker-compose.yml
+├── docker-compose.yml  # API + 前端；`--profile postgres` 追加 PostgreSQL
 └── Makefile
 ```
 
@@ -216,15 +231,31 @@ skin-diagnosis-agent/
 ```bash
 cd backend
 
-pytest -q                    # 单元测试（不依赖 Ollama，秒级完成）
-pytest -q -v                 # 查看每个用例名
-ruff check app scripts tests # 静态检查
-ruff format app scripts tests
+pytest -q                                # 单元测试（不依赖 Ollama，240+ 用例）
+pytest -q -v                             # 查看每个用例名
+ruff check app scripts tests alembic     # 静态检查
+ruff format app scripts tests alembic
+
+# 真实 PostgreSQL 集成测试（需先起库，默认跳过）
+docker compose --profile postgres up -d postgres
+SKIN_TEST_POSTGRES_URL=postgresql+psycopg://skin:skin@127.0.0.1:5432/skin \
+  pytest tests/test_postgres_integration.py -q
+# Windows cmd / PowerShell 用：
+#   set SKIN_TEST_POSTGRES_URL=postgresql+psycopg://skin:skin@127.0.0.1:5432/skin
+#   $env:SKIN_TEST_POSTGRES_URL="postgresql+psycopg://skin:skin@127.0.0.1:5432/skin"
+
+cd ../frontend
+npm ci
+npm run build
 ```
+
+GitHub Actions 会在 push / pull request 时自动执行后端 Ruff + pytest，以及前端 `npm ci` + build。
 
 测试覆盖**解析容错**（模型吐脏 JSON）、**安全不变量**（风险等级单调性、
 免责声明幂等）、**文本处理**（CJK 空格修复、分块元数据、jieba 领域词典）、
-**RRF 数学性质**、**意图路由优先级**与**接口契约**。
+**RRF 数学性质**、**意图路由优先级**、**接口契约**，以及新增的
+**跨方言 SQL**（`?` 占位符改写、`MIN`/`LIKE` 方言分支、离线生成的 PG DDL）
+与**评测指标数学性质**（用可手算的构造数据锁死 MRR / Recall / Precision）。
 
 模型效果评估应另建带标注集的流程，不混入单测——模型推理慢且不确定，
 塞进单测只会让 CI 又慢又脆。
@@ -237,7 +268,10 @@ ruff format app scripts tests
 | 中文向量模型 | Ollama / `bge-m3` | `BAAI/bge-small-zh-v1.5`、Chroma 内置 MiniLM |
 | 编排 | LangGraph | 手写流程、LangChain AgentExecutor |
 | 向量库 | Chroma（PersistentClient） | Milvus、Qdrant |
-| 元数据 | SQLite（标准库） | PostgreSQL、SQLAlchemy |
+| 元数据库 | SQLite（零依赖起步）/ PostgreSQL | MySQL、CockroachDB |
+| 数据访问 | SQLAlchemy Core（显式 SQL）+ psycopg 3 | ORM、aiosqlite |
+| 迁移 | Alembic | 手写 DDL、yoyo |
+| 可视化 | ECharts（按需引入） | Chart.js、AntV G2 |
 | 后端 | FastAPI | Django REST Framework |
 | 前端 | Vue 3 + Vite + Element Plus | React + Tailwind、Gradio |
 
