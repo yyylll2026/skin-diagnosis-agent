@@ -7,7 +7,7 @@
 先在 `backend/` 建好 venv（`python -m venv .venv` 后 `pip install -e ".[dev]"`）。以下都在 `backend/` 下、venv 已激活时执行：
 
 ```bash
-pytest -q                                                # 176 用例，35~60s，不连 Ollama
+pytest -q                                                # ~253 用例，35~60s，不连 Ollama
 pytest tests/test_safety.py::test_risk_level_is_never_downgraded -q   # 跑单个用例
 ruff check app scripts tests                             # 改完必跑
 ruff format app scripts tests
@@ -20,7 +20,7 @@ python -m scripts.ingest_cli search "面部红斑伴鳞屑如何鉴别"  # 检�
 - 根目录 `Makefile` 是同一批命令的封装（`make test/lint/fmt/dev/fe-dev`），**但本机 PATH 里没有 `make`**，直接用上面的命令。Makefile 期望 venv 在 `backend/.venv`，且用 `.RECIPEPREFIX = >`（不是 Tab）。
 - **CLI 必须在 `backend/` 下用 `python -m scripts.ingest_cli`**：`scripts/` 不是被安装的包，装好 venv 后的 `skin-kb` 入口在仓库根目录直接 `ModuleNotFoundError`。
 - 前端只有 `npm run dev / build / preview`，**没有 lint 和测试**：改前端的验证手段就是 `npm run build`。
-- 仓库**没有 CI、没有 pre-commit**，自检顺序：`ruff check` → `pytest`（动了前端再加 `npm run build`）。
+- **有 GitHub Actions CI**（`.github/workflows/ci.yml`，push/PR 到 main/master 触发）：后端 `ruff check` + `pytest -q`，前端 `npm ci && npm run build`，但**没有 pre-commit**。本地自检顺序与 CI 相同：`ruff check` → `pytest`（动了前端再加 `npm run build`）。
 
 ## 测试
 
@@ -42,6 +42,9 @@ python -m scripts.ingest_cli search "面部红斑伴鳞屑如何鉴别"  # 检�
 - **模型后端开关**：`SKIN_LLM_BACKEND=ollama|cloud`（`app/config.py` + `services/model_gateway.py` + `llm_factory.py`）。业务编排只依赖工厂与网关接口，**不要在节点里直接 new 客户端**。云端见 `docs/云端API部署.md`。
 - 配置集中在 `app/config.py`：前缀 `SKIN_`；路径由 `BACKEND_DIR = Path(__file__).parents[1]` 推导，**源码必须待在 `backend/app/`**——根目录两个 Dockerfile 因此用 `pip install -e .`，换成普通安装会让数据目录跑进 site-packages。
 - `cors_origins` 等 list 字段用了 `NoDecode`，接受逗号分隔字符串，不要改回默认 JSON 解析。
+- **数据层全是显式 SQL，不引 ORM**；方言差异（SQLite `MIN(a,b)` vs PG `LEAST`、`LIKE` vs `ILIKE`）集中在 `app/repositories/db.py`，新增分支写在那里并测试。连接与事务收敛在 `database.py`。
+- **建表/改表走 Alembic，运行时不执行 DDL**：`MetadataStore.__init__` 会自动跑 `alembic upgrade head`（默认 SQLite 场景也会）。改任何列都要**新增迁移文件到 `backend/alembic/versions/`**，别在代码里手写 `CREATE/ALTER TABLE`；SQLite 下迁移走 batch 模式（`alembic/env.py` 已开 `render_as_batch`）。切 PostgreSQL 时连接串必须带 `+psycopg` 后缀（装的是 psycopg 3）。
+- `alembic.ini` 必须保持**纯 ASCII**：Alembic 用系统 locale 编码读 ini，Windows 上非 ASCII 注释会直接 `UnicodeDecodeError`（连接串改由 `SKIN_DATABASE_URL` 注入）。ruff isort 也把 `alembic` 声明为第三方包（迁移目录无 `__init__.py`），改 ruff 配置时别删。
 
 ## 鉴权
 
@@ -73,4 +76,4 @@ python -m scripts.ingest_cli search "面部红斑伴鳞屑如何鉴别"  # 检�
 - 不要在未改 `safety_service` 语义的情况下「优化掉」风险只升不降或免责声明。
 - 不要依赖 `backend/.env`（本地私有，不入库）；对照 `.env.example` 写文档或改默认值。
 - 不要在单测里进 lifespan 或连真实 Ollama；生产默认 `qwen2.5vl:7b` + `bge-m3`。
-- 不要提交 `.workbuddy/`（本机会话工作状态）与根目录 `_credtest.txt`（临时调试残留）。
+- 不要提交 `.workbuddy/`、`.workbuddy-ai/`（本机会话工作状态）；`_credtest.txt`、`server.log`、`*.err` 等临时/日志残留 `.gitignore` 已忽略，新加临时文件照常入库前先清理。
