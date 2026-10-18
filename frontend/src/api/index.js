@@ -181,6 +181,34 @@ export function getHealthTrends(days = 90) {
   return request(http.get('/health-records/trends', { params: { days } }))
 }
 
+/* ------------------------------ 医生工作台 ------------------------------ */
+
+// 以下三个接口在服务端都由 `health_records:read_all` 权限点守卫（客户没有该点），
+// 前端在侧栏按同一权限点决定是否显示入口，这里不做二次判断。
+
+/** 患者列表（含每人最新记录摘要，按最近记录时间倒序） */
+export function listPatients(limit = 200, offset = 0) {
+  return request(http.get('/health-records/patients', { params: { limit, offset } }))
+}
+
+/** 查看某患者的全部健康记录（只读；编辑/删除仍仅限患者本人） */
+export function listPatientRecords(patientId, limit = 200, offset = 0) {
+  return request(
+    http.get(`/health-records/patients/${encodeURIComponent(patientId)}/records`, {
+      params: { limit, offset },
+    })
+  )
+}
+
+/** 查看某患者的病程趋势聚合 */
+export function getPatientTrends(patientId, days = 90) {
+  return request(
+    http.get(`/health-records/patients/${encodeURIComponent(patientId)}/trends`, {
+      params: { days },
+    })
+  )
+}
+
 /* ------------------------------ 系统 ------------------------------ */
 
 /** 健康检查：GET /api/v1/system/health */
@@ -538,6 +566,10 @@ export default {
   deleteHealthRecord,
   exportHealthRecords,
   getHealthTrends,
+  // 医生工作台
+  listPatients,
+  listPatientRecords,
+  getPatientTrends,
   // 知识库
   listDocuments,
   uploadDocument,

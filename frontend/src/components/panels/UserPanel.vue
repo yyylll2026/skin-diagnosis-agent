@@ -12,6 +12,7 @@ import {
 } from '../../api'
 import { useAuth } from '../../composables/useAuth'
 import { useSidebar } from '../../composables/useSidebar'
+import { ROLE_LABELS, ROLE_OPTIONS, ROLE_TAG_TYPES } from '../../constants/roles'
 
 /**
  * 用户管理抽屉（仅管理员可见）。
@@ -121,11 +122,6 @@ async function submitCreate() {
   }
 }
 
-function toggleRole(row) {
-  const next = row.role === 'admin' ? 'customer' : 'admin'
-  run(() => updateUser(row.user_id, { role: next }), `${row.username} 已设为 ${next}`)
-}
-
 function toggleStatus(row) {
   const next = row.status === 'active' ? 'disabled' : 'active'
   const verb = next === 'disabled' ? '禁用' : '启用'
@@ -138,6 +134,18 @@ function toggleStatus(row) {
   )
     .then(() => run(() => updateUser(row.user_id, { status: next }), `${row.username} 已${verb}`))
     .catch(() => {})
+}
+
+/**
+ * 改角色：四种角色没法用二元开关表达，改为在下拉里选定目标角色。
+ * 拒绝原因（比如「不能降级最后一个管理员」）以服务端返回为准，原样展示。
+ */
+function changeRole(row, role) {
+  if (!role || role === row.role) return
+  run(
+    () => updateUser(row.user_id, { role }),
+    `${row.username} 已设为 ${ROLE_LABELS[role] || role}`
+  )
 }
 
 function openReset(row) {
@@ -207,10 +215,15 @@ function isSelf(row) {
             </template>
           </el-table-column>
           <el-table-column prop="display_name" label="显示名" min-width="100" />
-          <el-table-column label="角色" width="90">
+          <el-table-column label="角色" width="200">
             <template #default="{ row }">
-              <el-tag :type="row.role === 'admin' ? 'warning' : 'info'" size="small" effect="plain">
-                {{ row.role === 'admin' ? '管理员' : '客户' }}
+              <el-tag
+                :type="ROLE_TAG_TYPES[row.role] || 'info'"
+                size="small"
+                effect="plain"
+                class="role-tag"
+              >
+                {{ ROLE_LABELS[row.role] || row.role }}
               </el-tag>
             </template>
           </el-table-column>
@@ -222,9 +235,22 @@ function isSelf(row) {
             </template>
           </el-table-column>
           <el-table-column prop="last_login_at" label="最后登录" min-width="140" />
-          <el-table-column label="操作" width="250" fixed="right">
+          <el-table-column label="操作" width="340" fixed="right">
             <template #default="{ row }">
-              <el-button link size="small" @click="toggleRole(row)">改角色</el-button>
+              <el-select
+                :model-value="row.role"
+                size="small"
+                class="role-select"
+                @change="(role) => changeRole(row, role)"
+              >
+                <el-option
+                  v-for="option in ROLE_OPTIONS"
+                  :key="option.value"
+                  :label="option.value === row.role ? `${option.label}（当前）` : option.label"
+                  :value="option.value"
+                  :disabled="option.value === row.role"
+                />
+              </el-select>
               <el-button link size="small" @click="toggleStatus(row)">
                 {{ row.status === 'active' ? '禁用' : '启用' }}
               </el-button>
@@ -275,8 +301,12 @@ function isSelf(row) {
         </el-form-item>
         <el-form-item label="角色">
           <el-select v-model="createForm.role" class="full">
-            <el-option label="客户（只能提问、只读查看知识库）" value="customer" />
-            <el-option label="管理员（知识库读写 + 用户管理）" value="admin" />
+            <el-option
+              v-for="option in ROLE_OPTIONS"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </el-form-item>
       </el-form>
@@ -334,5 +364,14 @@ function isSelf(row) {
 
 .full {
   width: 100%;
+}
+
+.role-select {
+  width: 140px;
+  margin-right: 10px;
+}
+
+.role-tag {
+  margin-right: 6px;
 }
 </style>

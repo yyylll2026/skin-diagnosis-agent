@@ -12,6 +12,7 @@ import { useSidebar } from './composables/useSidebar'
 const KnowledgePanel = defineAsyncComponent(() => import('./components/panels/KnowledgePanel.vue'))
 const UserPanel = defineAsyncComponent(() => import('./components/panels/UserPanel.vue'))
 const HealthRecordsPanel = defineAsyncComponent(() => import('./components/panels/HealthRecordsPanel.vue'))
+const PatientPanel = defineAsyncComponent(() => import('./components/panels/PatientPanel.vue'))
 
 const { init: initSessions } = useSessions()
 
@@ -36,10 +37,12 @@ installUnauthorizedHandler()
 const knowledgeOpen = ref(false)
 const userPanelOpen = ref(false)
 const healthRecordsOpen = ref(false)
+const patientsOpen = ref(false)
 // 首次打开后才真正挂载（并加载）对应面板 chunk
 const knowledgeMounted = ref(false)
 const userPanelMounted = ref(false)
 const healthRecordsMounted = ref(false)
+const patientsMounted = ref(false)
 watch(knowledgeOpen, (open) => {
   if (open) knowledgeMounted.value = true
 })
@@ -48,6 +51,9 @@ watch(userPanelOpen, (open) => {
 })
 watch(healthRecordsOpen, (open) => {
   if (open) healthRecordsMounted.value = true
+})
+watch(patientsOpen, (open) => {
+  if (open) patientsMounted.value = true
 })
 
 /**
@@ -84,6 +90,7 @@ onBeforeUnmount(() => {
         @open-knowledge="knowledgeOpen = true"
         @open-users="userPanelOpen = true"
         @open-health-records="healthRecordsOpen = true"
+        @open-patients="patientsOpen = true"
       />
     </aside>
 
@@ -109,6 +116,7 @@ onBeforeUnmount(() => {
     <KnowledgePanel v-if="knowledgeMounted" v-model="knowledgeOpen" />
     <UserPanel v-if="userPanelMounted" v-model="userPanelOpen" />
     <HealthRecordsPanel v-if="healthRecordsMounted" v-model="healthRecordsOpen" />
+    <PatientPanel v-if="patientsMounted" v-model="patientsOpen" />
     <LoginDialog />
   </div>
 </template>

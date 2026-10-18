@@ -10,18 +10,32 @@ import { useSidebar } from '../../composables/useSidebar'
  *
  * 桌面端可收起为窄条；移动端（≤860px）作为浮层抽屉渲染（由 App.vue 控制容器类名）。
  */
-const emit = defineEmits(['open-knowledge', 'open-users', 'open-health-records'])
+const emit = defineEmits([
+  'open-knowledge',
+  'open-users',
+  'open-health-records',
+  'open-patients',
+])
 
 const { sessions, currentId, createSession, selectSession, removeSession } = useSessions()
-const { authEnabled, isLoggedIn, isAdmin, displayName, can, requireLogin, logout } = useAuth()
+const { authEnabled, isLoggedIn, displayName, roleLabel, can, requireLogin, logout } = useAuth()
 const { health, refreshHealth } = useHealth()
 const { isMobile, collapsed, toggleCollapsed, closeMobile } = useSidebar()
 
 /** 知识库管理入口：需要写权限，客户不显示 */
 const canManageKnowledge = computed(() => can('kb:write') || can('kb:reindex'))
 
-/** 用户管理入口：仅管理员 */
-const canManageUsers = computed(() => isAdmin.value)
+/** 用户管理入口：仅管理员（服务端同样只给 admin 发 user:write 权限点） */
+const canManageUsers = computed(() => can('user:write'))
+
+/**
+ * 患者工作台入口：与后端四个 /health-records/patients 端点同一个权限点。
+ * 鉴权关闭时（本地开发以合成管理员进入）没有 permissions 数组，但服务端会把
+ * 每个请求当作管理员，因此也显示入口。
+ */
+const canReviewPatients = computed(
+  () => !authEnabled.value || can('health_records:read_all')
+)
 
 function onNewSession() {
   createSession()
@@ -125,6 +139,11 @@ async function onLogout() {
         个人健康记录
       </el-button>
 
+      <!-- 患者（医生）工作台：只读查看全部患者记录与趋势 -->
+      <el-button v-if="canReviewPatients" class="kb-entry" plain @click="emit('open-patients')">
+        患者工作台
+      </el-button>
+
       <!-- 入口按权限显隐。注意这只是体验优化：
            客户即使手工调用 /kb/documents 也会在服务端拿到 403 -->
       <el-button v-if="canManageKnowledge" class="kb-entry" plain @click="emit('open-knowledge')">
@@ -138,7 +157,7 @@ async function onLogout() {
       <div v-if="authEnabled" class="account">
         <div class="account-text">
           <p class="account-name" :title="displayName">{{ displayName || '未登录' }}</p>
-          <p class="account-role">{{ isAdmin ? '管理员' : '客户' }}</p>
+          <p class="account-role">{{ roleLabel || '未登录' }}</p>
         </div>
         <el-button v-if="isLoggedIn" link size="small" @click="onLogout">登出</el-button>
         <el-button v-else link size="small" @click="requireLogin()">登录</el-button>

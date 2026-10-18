@@ -7,6 +7,7 @@ import {
   register as apiRegister,
   setUnauthorizedHandler,
 } from '../api'
+import { ROLE_LABELS } from '../constants/roles'
 
 /**
  * 登录状态。
@@ -34,6 +35,10 @@ const isLoggedIn = computed(() => !!user.value)
 const isAdmin = computed(() => user.value?.role === 'admin')
 const displayName = computed(
   () => user.value?.display_name || user.value?.username || ''
+)
+/** 当前角色的中文标签，未知角色原样显示，避免新角色在侧栏出现空文案 */
+const roleLabel = computed(
+  () => (user.value ? ROLE_LABELS[user.value.role] || user.value.role : '')
 )
 
 /**
@@ -135,6 +140,7 @@ export function useAuth() {
     loginOpen,
     isLoggedIn,
     isAdmin,
+    roleLabel,
     displayName,
     can,
     requireLogin,

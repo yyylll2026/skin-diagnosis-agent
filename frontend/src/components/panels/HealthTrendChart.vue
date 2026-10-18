@@ -13,13 +13,19 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getHealthTrends } from '../../api'
+import {
+  getHealthTrends,
+  getPatientTrends,
+} from '../../api'
 import EChart from '../common/EChart.vue'
 import { CHART_COLORS, SEVERITY_COLORS } from '../../utils/echarts'
 
 const props = defineProps({
   /** 父组件在增删改记录后自增，用来触发重新拉取 */
   refreshKey: { type: Number, default: 0 },
+  /** 传入时走医生工作台接口（GET /health-records/patients/{id}/trends），
+   *  不传则聚合当前登录人自己的记录 */
+  patientId: { type: String, default: '' },
 })
 
 const DAY_OPTIONS = [
@@ -46,7 +52,9 @@ const trend = ref(null)
 async function load() {
   loading.value = true
   try {
-    trend.value = await getHealthTrends(days.value)
+    trend.value = props.patientId
+      ? await getPatientTrends(props.patientId, days.value)
+      : await getHealthTrends(days.value)
   } catch (err) {
     ElMessage.error(err?.message || '加载病程趋势失败')
   } finally {
