@@ -66,6 +66,19 @@ PERMISSION_SESSION_READ_ALL = "session:read_all"
 PERMISSION_USER_READ = "user:read"
 PERMISSION_USER_WRITE = "user:write"
 PERMISSION_AUDIT_READ = "audit:read"
+# 健康记录的读权限**按数据可见范围拆成两个点**，不要合并：
+#   health_records:read      —— 读「自己的」记录（每个登录用户都有）
+#   health_records:read_all  —— 读「任意患者」的记录（医生/专家/管理员）
+# 合并成一个 read 会让「客户」与「医生」在权限表里无法区分，
+# 医生工作台那几个端点就会对任何登录用户敞开（越权读取他人病历）。
+# 这与 knowledge.py 里 kb:write / kb:reindex / kb:reset 按破坏力拆分的思路一致：
+# 权限点回答「能不能做这个动作」，数据范围是动作语义的一部分，必须显式表达。
+PERMISSION_HEALTH_READ = "health_records:read"
+PERMISSION_HEALTH_READ_ALL = "health_records:read_all"
+PERMISSION_HEALTH_WRITE = "health_records:write"
+PERMISSION_HEALTH_DELETE = "health_records:delete"
+PERMISSION_DIAGNOSIS_REVIEW = "diagnosis:review"  # 诊断复核（专家）
+PERMISSION_KB_REVIEW = "kb:review"  # 知识库审核（专家）
 
 PERMISSIONS: dict[Role, frozenset[str]] = {
     Role.ADMIN: frozenset(
@@ -79,10 +92,50 @@ PERMISSIONS: dict[Role, frozenset[str]] = {
             PERMISSION_USER_READ,
             PERMISSION_USER_WRITE,
             PERMISSION_AUDIT_READ,
+            PERMISSION_HEALTH_READ,
+            PERMISSION_HEALTH_READ_ALL,
+            PERMISSION_HEALTH_WRITE,
+            PERMISSION_HEALTH_DELETE,
+            PERMISSION_DIAGNOSIS_REVIEW,
+            PERMISSION_KB_REVIEW,
         }
     ),
-    # 客户：能提问、能只读查看知识库，不能有任何写操作
-    Role.CUSTOMER: frozenset({PERMISSION_KB_READ, PERMISSION_CHAT_USE}),
+    # 专家/审核员：医生权限 + 知识库审核 + 诊断复核 + 审计只读
+    Role.EXPERT: frozenset(
+        {
+            PERMISSION_KB_READ,
+            PERMISSION_KB_WRITE,
+            PERMISSION_KB_REVIEW,
+            PERMISSION_CHAT_USE,
+            PERMISSION_SESSION_READ_ALL,
+            PERMISSION_AUDIT_READ,
+            PERMISSION_HEALTH_READ,
+            PERMISSION_HEALTH_READ_ALL,
+            PERMISSION_HEALTH_WRITE,
+            PERMISSION_DIAGNOSIS_REVIEW,
+        }
+    ),
+    # 医生：知识库只读、问诊、读写患者病历（含跨患者读取）
+    Role.DOCTOR: frozenset(
+        {
+            PERMISSION_KB_READ,
+            PERMISSION_CHAT_USE,
+            PERMISSION_HEALTH_READ,
+            PERMISSION_HEALTH_READ_ALL,
+            PERMISSION_HEALTH_WRITE,
+        }
+    ),
+    # 客户/患者：能提问、只读查看知识库、管理自己的健康记录。
+    # **刻意不给 health_records:read_all**——这是「客户不能读走他人病历」的唯一保证，
+    # 医生工作台端点全部依赖该权限点做守卫，改动前务必先看本文件顶部的权限模型注释。
+    Role.CUSTOMER: frozenset(
+        {
+            PERMISSION_KB_READ,
+            PERMISSION_CHAT_USE,
+            PERMISSION_HEALTH_READ,
+            PERMISSION_HEALTH_WRITE,
+        }
+    ),
 }
 
 # bcrypt 的轮数。12 在现代 CPU 上约 0.2~0.3 秒，是「抗暴力破解」与
@@ -800,9 +853,15 @@ __all__ = [
     "PERMISSIONS",
     "PERMISSION_AUDIT_READ",
     "PERMISSION_CHAT_USE",
+    "PERMISSION_DIAGNOSIS_REVIEW",
+    "PERMISSION_HEALTH_DELETE",
+    "PERMISSION_HEALTH_READ",
+    "PERMISSION_HEALTH_READ_ALL",
+    "PERMISSION_HEALTH_WRITE",
     "PERMISSION_KB_READ",
     "PERMISSION_KB_REINDEX",
     "PERMISSION_KB_RESET",
+    "PERMISSION_KB_REVIEW",
     "PERMISSION_KB_WRITE",
     "PERMISSION_SESSION_READ_ALL",
     "PERMISSION_USER_READ",

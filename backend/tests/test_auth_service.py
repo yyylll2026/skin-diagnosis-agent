@@ -30,10 +30,13 @@ from app.repositories.db import MetadataStore
 from app.schemas.auth import Role, UserStatus
 from app.services import auth_service as auth_module
 from app.services.auth_service import (
+    PERMISSION_HEALTH_READ,
+    PERMISSION_HEALTH_READ_ALL,
     PERMISSION_KB_READ,
     PERMISSION_KB_WRITE,
     PERMISSION_SESSION_READ_ALL,
     PERMISSION_USER_READ,
+    PERMISSIONS,
     AuthService,
 )
 
@@ -294,6 +297,47 @@ def test_customer_cannot_write_knowledge_base(service: AuthService) -> None:
     assert service.has_permission(Role.CUSTOMER, PERMISSION_KB_READ) is True
     for permission in (PERMISSION_KB_WRITE, PERMISSION_USER_READ, PERMISSION_SESSION_READ_ALL):
         assert service.has_permission(Role.CUSTOMER, permission) is False
+
+
+def test_customer_cannot_read_other_patients_records(service: AuthService) -> None:
+    """客户只有「读自己」，没有「读任意患者」。
+
+    这是医生工作台四个端点的**唯一防线**（见 api/v1/health_records.py）。
+    回归背景：`health_records:read` 曾经同时承担「读自己」与「读全部」两种语义，
+    客户也持有它，于是任何注册用户都能枚举全部患者并读走病历。
+    修法是把它拆成 read / read_all 两个权限点。本用例锁住拆分结果。
+    """
+    assert service.has_permission(Role.CUSTOMER, PERMISSION_HEALTH_READ) is True
+    assert service.has_permission(Role.CUSTOMER, PERMISSION_HEALTH_READ_ALL) is False
+
+
+def test_clinicians_can_read_other_patients_records(service: AuthService) -> None:
+    """医生/专家/管理员持有跨患者读取权限，否则工作台对谁都打不开。"""
+    for role in (Role.DOCTOR, Role.EXPERT, Role.ADMIN):
+        assert service.has_permission(role, PERMISSION_HEALTH_READ_ALL) is True, role
+
+
+def test_every_role_is_registered_in_the_permission_table() -> None:
+    """每个角色都必须在权限表里有条目。
+
+    `has_permission` 用的是 `PERMISSIONS.get(role, frozenset())`，
+    漏登记不会报错，只会静默变成「零权限角色」——这种失败方式很难排查。
+    """
+    assert set(PERMISSIONS) == set(Role)
+
+
+def test_admin_permissions_are_a_superset_of_every_other_role() -> None:
+    """管理员必须是所有角色的超集。
+
+    这条不变量一旦破坏，就会出现「某角色能做的事管理员反而不能做」，
+    而真实原因通常是往权限表加权限点时漏了 ADMIN 那一行。
+    """
+    admin = PERMISSIONS[Role.ADMIN]
+    for role in Role:
+        if role is Role.ADMIN:
+            continue
+        missing = PERMISSIONS[role] - admin
+        assert not missing, f"{role} 有而管理员没有的权限点：{sorted(missing)}"
 
 
 def test_ensure_permission_raises_403_for_customer(service: AuthService, customer) -> None:

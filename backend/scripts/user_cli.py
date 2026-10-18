@@ -1,4 +1,4 @@
-"""用户管理 CLI。
+﻿"""用户管理 CLI。
 
 ## 为什么必须有这个脚本
 
@@ -70,7 +70,7 @@ def _read_password(confirm: bool = True) -> str:
 
 def _fail(message: str) -> None:
     """统一输出错误并退出。"""
-    console.print(f"[red]✗[/red] {message}")
+    console.print(f"[red]ERROR[/red] {message}")
     raise typer.Exit(code=1)
 
 
@@ -94,7 +94,7 @@ def create_admin(
     except AppError as exc:
         _fail(exc.message)
         return
-    console.print(f"[green]✓[/green] 已创建管理员 {user.username}（{user.user_id}）")
+    console.print(f"[green]OK[/green] 已创建管理员 {user.username}（{user.user_id}）")
 
 
 @app.command("create-user")
@@ -124,7 +124,7 @@ def create_user(
     except AppError as exc:
         _fail(exc.message)
         return
-    console.print(f"[green]✓[/green] 已创建 {user.username}（{user.role}）")
+    console.print(f"[green]OK[/green] 已创建 {user.username}（{user.role}）")
 
 
 @app.command("list")
@@ -180,7 +180,7 @@ def set_role(
     except AppError as exc:
         _fail(exc.message)
         return
-    console.print(f"[green]✓[/green] {target.username} 的角色已改为 {parsed.value}")
+    console.print(f"[green]OK[/green] {target.username} 的角色已改为 {parsed.value}")
 
 
 @app.command("set-status")
@@ -204,7 +204,7 @@ def set_status(
     except AppError as exc:
         _fail(exc.message)
         return
-    console.print(f"[green]✓[/green] {target.username} 已设为 {parsed.value}")
+    console.print(f"[green]OK[/green] {target.username} 已设为 {parsed.value}")
 
 
 @app.command("reset-password")
@@ -223,7 +223,7 @@ def reset_password(
     except AppError as exc:
         _fail(exc.message)
         return
-    console.print(f"[green]✓[/green] {target.username} 的密码已重置，其所有会话已失效")
+    console.print(f"[green]OK[/green] {target.username} 的密码已重置，其所有会话已失效")
 
 
 @app.command("delete")
@@ -246,7 +246,7 @@ def delete_user(
     except AppError as exc:
         _fail(exc.message)
         return
-    console.print(f"[green]✓[/green] 已删除 {target.username}")
+    console.print(f"[green]OK[/green] 已删除 {target.username}")
 
 
 @app.command("audit")

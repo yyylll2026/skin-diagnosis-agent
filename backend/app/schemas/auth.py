@@ -22,10 +22,19 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class Role(StrEnum):
-    """用户角色。当前只有两类。"""
+    """用户角色。
 
-    ADMIN = "admin"  # 管理员：知识库增删改查 + 用户管理
-    CUSTOMER = "customer"  # 客户：只能提问与只读查看知识库
+    按权限从高到低排序：
+    - ADMIN：超级管理员，拥有所有权限
+    - EXPERT：专家/审核员，具备知识库写入审核、诊断复核权限
+    - DOCTOR：医生，可进行诊断、读写患者病历
+    - CUSTOMER：普通用户/患者，仅能提问与只读查看知识库
+    """
+
+    ADMIN = "admin"
+    EXPERT = "expert"
+    DOCTOR = "doctor"
+    CUSTOMER = "customer"
 
 
 def normalize_username(value: object) -> str:

@@ -27,6 +27,7 @@ from typing import Any
 from loguru import logger
 
 from app.repositories.database import Database, DatabaseConnection, normalize_database_url
+from app.schemas.auth import UserStatus
 from app.schemas.knowledge import DocumentInfo
 
 
@@ -308,6 +309,75 @@ class MetadataStore:
         with self._connect() as conn:
             cursor = conn.execute("DELETE FROM health_records WHERE user_id = ?", (user_id,))
         return cursor.rowcount
+
+    # ------------------------------------------------------------------
+    # 医生/专家跨用户查询（调用方需 health_records:read_all 权限）
+    #
+    # 本层**不判断角色**：谁是患者、谁能看谁，属于业务规则，由接口层的
+    # 权限点（health_records:read_all）与将来的医患绑定关系表回答。
+    # 早先这里写死了 `WHERE u.role = 'customer'`，那等于把角色语义沉到仓储层，
+    # 一旦角色表变动（或医生自己也需要病历），这里就成了沉默的错答案。
+    # ------------------------------------------------------------------
+
+    def list_all_patients(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+        """列出所有有健康记录的启用用户（用于医生工作台）。
+
+        返回每个用户的最新一条记录摘要，按最近记录时间倒序。
+
+        **刻意不按 role 过滤**：`users.role` 是自由文本、没有 CHECK 约束，
+        拿它当「是不是患者」的依据并不可靠；而且医生/专家自己也可能有健康记录，
+        按角色过滤会把他们从列表里漏掉。真正的边界在接口层的权限点，
+        以及后续的医患绑定关系表，不在这一层。
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT u.user_id, u.username, u.display_name,
+                       MAX(hr.recorded_on) AS latest_recorded_on,
+                       COUNT(hr.record_id) AS record_count,
+                       MAX(hr.created_at) AS latest_created_at
+                FROM users u
+                JOIN health_records hr ON u.user_id = hr.user_id
+                WHERE u.status = ?
+                GROUP BY u.user_id, u.username, u.display_name
+                ORDER BY latest_recorded_on DESC, latest_created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (UserStatus.ACTIVE.value, limit, offset),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_patient_records(
+        self, patient_id: str, limit: int = 200, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """医生/专家查看某患者的全部健康记录（不限制归属）。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM health_records WHERE user_id = ?
+                ORDER BY recorded_on DESC, created_at DESC, record_id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (patient_id, limit, offset),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_patient_record(self, record_id: str, patient_id: str) -> dict[str, Any] | None:
+        """医生/专家按 ID 读取某患者的特定记录（不限制归属）。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM health_records WHERE record_id = ? AND user_id = ?",
+                (record_id, patient_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def count_patient_records(self, patient_id: str) -> int:
+        """统计某患者的记录总数。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM health_records WHERE user_id = ?", (patient_id,)
+            ).fetchone()
+        return int(row["n"]) if row else 0
 
     # ------------------------------------------------------------------
     # 异步分析任务
